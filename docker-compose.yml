@@ -1,0 +1,25 @@
+services:
+  ig-autoreply:
+    build: .
+    image: ig-autoreply:latest
+    container_name: ig-autoreply
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_PATH: /app/data/app.db
+    ports:
+      - "127.0.0.1:3010:3000" # só o Nginx do host alcança o app
+    volumes:
+      - ./data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
