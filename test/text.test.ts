@@ -42,6 +42,19 @@ describe('renderReply', () => {
   it('remove o marcador quando não há username', () => {
     expect(renderReply('Oi {usuario} te mandei no direct!', null)).toBe('Oi te mandei no direct!');
   });
+
+  it('preserva quebras de linha e substitui {usuario} em templates multilinha', () => {
+    expect(renderReply('Oi {usuario}!\n\nAqui está o link', 'maria')).toBe('Oi @maria!\n\nAqui está o link');
+  });
+
+  it('colapsa o espaço duplo deixado pelo marcador removido, sem tocar nas quebras de linha', () => {
+    expect(renderReply('Oi {usuario} tudo', null)).toBe('Oi tudo');
+    expect(renderReply('Oi {usuario}\n\nTudo bem', null)).toBe('Oi\n\nTudo bem');
+  });
+
+  it('não interpreta padrões especiais de substituição no username', () => {
+    expect(renderReply('Oi {usuario}', '$&x')).toBe('Oi @$&x');
+  });
 });
 
 describe('pickVariationIndex', () => {

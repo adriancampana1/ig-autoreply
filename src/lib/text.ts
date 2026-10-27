@@ -30,7 +30,11 @@ export function findMatchingKeyword(text: string, keywords: readonly string[]): 
 /** Substitui {usuario} por @username (ou remove o marcador se o username for desconhecido). */
 export function renderReply(template: string, username: string | null | undefined): string {
   const mention = username ? `@${username}` : '';
-  return template.replace(/\{usuario\}/gi, mention).replace(/\s{2,}/g, ' ').trim();
+  return template
+    .replace(/\{usuario\}/gi, () => mention)
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim();
 }
 
 /** Sorteia um índice diferente do último usado (quando houver mais de uma opção). */
