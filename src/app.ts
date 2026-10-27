@@ -10,6 +10,7 @@ import type { Health } from './engine/scheduler.js';
 import type { FetchFn, InstagramClient } from './instagram/client.js';
 import type { InstagramOAuth } from './instagram/oauth.js';
 import type { TokenCipher } from './lib/crypto.js';
+import { registerPanel } from './panel/register.js';
 import { registerPublicRoutes } from './public/routes.js';
 import { registerWebhookRoutes } from './webhooks/routes.js';
 
@@ -72,5 +73,6 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   await app.register(registerWebhookRoutes, deps);
   await app.register(registerPublicRoutes, deps);
+  await app.register(registerPanel, deps);
   return app;
 }
