@@ -26,22 +26,30 @@ export function privacyPolicy(input: { contactEmail: string; updatedAt: string }
   <ul>
     <li>Da conta conectada: identificador, nome de usuário e token de acesso (armazenado criptografado).</li>
     <li>De quem comenta nos posts com automação ativa: identificador escopado do Instagram, nome de usuário, texto do comentário e o status das respostas enviadas.</li>
+    <li>Notificações brutas enviadas pela Meta sobre novos comentários: podem incluir comentários feitos em qualquer post da conta conectada
+      (identificador e nome de usuário de quem comentou e o texto), mesmo em posts sem automação.</li>
   </ul>
   <h2>Finalidade</h2>
   <p>Os dados são usados apenas para identificar comentários com palavras-chave, responder a eles e mostrar o histórico ao titular da conta.
     Não vendemos, compartilhamos ou usamos os dados para publicidade ou qualquer outra finalidade.</p>
   <h2>Retenção</h2>
-  <p>Registros de comentários e respostas são apagados automaticamente após 90 dias; notificações técnicas recebidas da Meta, após 30 dias.
+  <p>Registros de comentários e respostas são apagados automaticamente após 90 dias; as notificações brutas recebidas da Meta, após 30 dias.
     Ao desconectar uma conta, o token de acesso é apagado imediatamente.</p>
-  <h2>Exclusão de dados</h2>
-  <p>O titular pode remover o app nas configurações do Instagram (Configurações › Apps e sites), o que dispara a exclusão automática dos dados
-    da conta. Qualquer pessoa pode pedir a exclusão dos seus dados pelo e-mail <a href="mailto:${input.contactEmail}">${input.contactEmail}</a>.</p>
+  <h2>Remoção do app e exclusão de dados</h2>
+  <p>Se o titular remover o app nas configurações do Instagram (Configurações › Apps e sites), o acesso é revogado na hora e nenhuma resposta é mais enviada.
+    Os dados são excluídos de três formas:</p>
+  <ul>
+    <li>pelo pedido de exclusão de dados feito na Meta: recebemos o aviso e apagamos na hora todos os dados da conta, inclusive as notificações brutas;</li>
+    <li>a pedido de qualquer pessoa, pelo e-mail <a href="mailto:${input.contactEmail}">${input.contactEmail}</a>;</li>
+    <li>automaticamente: após 90 dias (comentários e respostas) e após 30 dias (notificações brutas).</li>
+  </ul>
 
   <h1 lang="en">Privacy Policy (English)</h1>
   <p lang="en">This private tool is used only by the owners of the connected Instagram professional accounts. It replies to comments containing
     owner-defined keywords and sends one private reply to the commenter through Meta's official Instagram Platform API. We process the connected
     account's ID, username and access token (encrypted), and, for commenters on posts with an active automation, their Instagram-scoped ID,
-    username, comment text and reply status. Data is used solely to provide this feature, is never sold or shared, and is deleted automatically after
-    90 days (technical webhook logs after 30 days). Removing the app from Instagram triggers deletion of the account's data. Deletion requests:
-    <a href="mailto:${input.contactEmail}">${input.contactEmail}</a>.</p>`;
+    username, comment text and reply status. Raw notifications sent by Meta may include comments on any post of the connected account.
+    Data is used solely to provide this feature and is never sold or shared. Removing the app from Instagram revokes our access immediately and stops
+    all replies. Data is deleted through Meta's data deletion request (immediately, including raw notifications), on request by e-mail to
+    <a href="mailto:${input.contactEmail}">${input.contactEmail}</a>, or automatically after 90 days (comments and replies) and 30 days (raw notifications).</p>`;
 }

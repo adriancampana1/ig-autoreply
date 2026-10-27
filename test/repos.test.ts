@@ -1,3 +1,4 @@
+import { deleteWebhookEventsMentioning, insertWebhookEvent } from '../src/db/repos/webhookEvents.js';
 import { describe, expect, it } from 'vitest';
 import {
   disconnectAccount,
@@ -271,5 +272,15 @@ describe('desconexão, reconexão e status', () => {
     const db = makeDb();
     expect(refreshInteractionStatus(db, 9999)).toBeNull();
     expect(db.prepare('SELECT COUNT(*) AS n FROM interactions').get()).toEqual({ n: 0 });
+  });
+});
+
+describe('webhook_events por conta', () => {
+  it('deleteWebhookEventsMentioning apaga só os eventos que citam o ig_id', () => {
+    const db = makeDb();
+    insertWebhookEvent(db, '{"entry":[{"id":"17841400000000001"}]}', T0);
+    insertWebhookEvent(db, '{"entry":[{"id":"17841400000000002"}]}', T0);
+    expect(deleteWebhookEventsMentioning(db, '17841400000000001')).toBe(1);
+    expect(db.prepare('SELECT payload_json AS p FROM webhook_events').all()).toEqual([{ p: '{"entry":[{"id":"17841400000000002"}]}' }]);
   });
 });

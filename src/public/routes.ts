@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../app.js';
 import { deleteAccount, disconnectAccount, findAccountsByAnyUserId } from '../db/repos/accounts.js';
 import { findDeletionRequest, insertDeletionRequest } from '../db/repos/deletionRequests.js';
+import { deleteWebhookEventsMentioning } from '../db/repos/webhookEvents.js';
 import { html } from '../lib/html.js';
 import { parseSignedRequest, randomToken } from '../lib/crypto.js';
 import { privacyPolicy, publicPage } from './views.js';
@@ -37,7 +38,10 @@ export async function registerPublicRoutes(app: FastifyInstance, deps: AppDeps):
     if (!payload) return reply.code(400).send({ error: 'invalid signed_request' });
     const code = randomToken(12);
     deps.db.transaction(() => {
-      for (const account of findAccountsByAnyUserId(deps.db, payload.user_id)) deleteAccount(deps.db, account.id);
+      for (const account of findAccountsByAnyUserId(deps.db, payload.user_id)) {
+        deleteAccount(deps.db, account.id);
+        deleteWebhookEventsMentioning(deps.db, account.igId);
+      }
       insertDeletionRequest(deps.db, code, payload.user_id, deps.now());
     })();
     return reply.send({ url: `${deps.config.APP_BASE_URL}/meta/data-deletion/status?code=${code}`, confirmation_code: code });
