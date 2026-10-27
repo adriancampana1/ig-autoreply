@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { getAccountById, updateAccountToken } from '../src/db/repos/accounts.js';
 import { insertInteraction } from '../src/db/repos/interactions.js';
+import { enqueueJob } from '../src/db/repos/jobs.js';
 import { insertWebhookEvent } from '../src/db/repos/webhookEvents.js';
 import { refreshExpiringTokens, runHousekeeping } from '../src/engine/maintenance.js';
 import { GraphApiError } from '../src/instagram/errors.js';
@@ -21,6 +22,16 @@ describe('refreshExpiringTokens', () => {
     expect(await refreshExpiringTokens(d)).toEqual({ refreshed: 0, failed: 0 });
     const d2 = deps(db, T0 + 2 * DAY);
     expect(await refreshExpiringTokens(d2)).toEqual({ refreshed: 0, failed: 0 });
+  });
+
+  it('não renova token com menos de 24h de idade mesmo dentro da janela de 30 dias', async () => {
+    const db = makeDb();
+    const acc = seedAccount(db);
+    const now = T0 + 12 * 3_600_000;
+    updateAccountToken(db, acc.id, 'x', now + 5 * DAY, now - 3_600_000); // renovado há 1h, vence em 5 dias
+    const d = deps(db, now);
+    expect(await refreshExpiringTokens(d)).toEqual({ refreshed: 0, failed: 0 });
+    expect(d.refresh).not.toHaveBeenCalled();
   });
 
   it('renova quando faltam ≤ 30 dias e grava a nova expiração', async () => {
@@ -54,5 +65,50 @@ describe('runHousekeeping', () => {
       source: 'webhook', status: 'skipped',
     }, T0);
     expect(runHousekeeping(db, T0 + 91 * DAY)).toEqual({ cancelled: 0, events: 1, interactions: 1 });
+  });
+
+  const queuedInteraction = (db: ReturnType<typeof makeDb>, automationId: number, accountId: number, commentId: string, at: number) => {
+    const id = insertInteraction(db, {
+      automationId, commentId, commenterIgsid: `U-${commentId}`, commentText: 'eu quero', matchedKeyword: 'eu quero',
+      source: 'webhook', status: 'queued',
+    }, at)!;
+    enqueueJob(db, { interactionId: id, accountId, type: 'public_reply', runAt: at }, at);
+    return id;
+  };
+
+  it('cancela jobs pendentes de comentários com mais de 7 dias e recalcula o status', () => {
+    const db = makeDb();
+    const account = seedAccount(db);
+    const auto = seedAutomation(db, account.id);
+    const now = T0 + 10 * DAY;
+    const oldId = queuedInteraction(db, auto.id, account.id, 'OLD', T0 + 2 * DAY); // 8 dias
+    const freshId = queuedInteraction(db, auto.id, account.id, 'NEW', T0 + 5 * DAY); // 5 dias
+    expect(runHousekeeping(db, now)).toEqual({ cancelled: 1, events: 0, interactions: 0 });
+    const job = (id: number) => db.prepare('SELECT status, fail_reason AS reason FROM jobs WHERE interaction_id = ?').get(id);
+    expect(job(oldId)).toEqual({ status: 'cancelled', reason: 'window_expired' });
+    expect(job(freshId)).toEqual({ status: 'pending', reason: null });
+    const status = (id: number) => (db.prepare('SELECT status FROM interactions WHERE id = ?').get(id) as { status: string }).status;
+    expect(status(oldId)).toBe('failed');
+    expect(status(freshId)).toBe('queued');
+  });
+
+  it('a retenção de 90 dias apaga interações antigas e seus jobs em cascata', () => {
+    const db = makeDb();
+    const account = seedAccount(db);
+    const auto = seedAutomation(db, account.id);
+    const now = T0 + 100 * DAY;
+    queuedInteraction(db, auto.id, account.id, 'OLD', T0 + DAY); // 99 dias
+    const recentId = queuedInteraction(db, auto.id, account.id, 'RECENT', T0 + 50 * DAY);
+    expect(runHousekeeping(db, now).interactions).toBe(1);
+    expect(db.prepare('SELECT id FROM interactions').all()).toEqual([{ id: recentId }]);
+    expect(db.prepare('SELECT interaction_id AS id FROM jobs').all()).toEqual([{ id: recentId }]);
+  });
+
+  it('a retenção de eventos de webhook usa o corte de 30 dias', () => {
+    const db = makeDb();
+    insertWebhookEvent(db, '{"a":1}', T0 + 69 * DAY); // 31 dias antes de "agora"
+    insertWebhookEvent(db, '{"a":2}', T0 + 71 * DAY); // 29 dias
+    expect(runHousekeeping(db, T0 + 100 * DAY).events).toBe(1);
+    expect(db.prepare('SELECT payload_json AS p FROM webhook_events').all()).toEqual([{ p: '{"a":2}' }]);
   });
 });
