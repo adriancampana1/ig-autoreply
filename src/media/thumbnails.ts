@@ -2,6 +2,7 @@ import type { FetchFn, InstagramClient, MediaItem } from '../instagram/client.js
 
 const ALLOWED_HOSTS = [/\.cdninstagram\.com$/, /\.fbcdn\.net$/];
 const URL_TTL_MS = 60 * 60_000;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 /**
  * Busca a miniatura de um post no servidor e a devolve ao navegador, evitando bloqueios de
@@ -30,15 +31,21 @@ export function createThumbnailService(deps: { client: InstagramClient; fetch?: 
         cached = { url, at: deps.now() };
         urls.set(mediaId, cached);
       }
-      const host = new URL(cached.url).hostname;
-      if (!ALLOWED_HOSTS.some((pattern) => pattern.test(host))) return null;
-      const response = await doFetch(cached.url, { signal: AbortSignal.timeout(10_000) });
+      const target = new URL(cached.url);
+      if (target.protocol !== 'https:' || !ALLOWED_HOSTS.some((pattern) => pattern.test(target.hostname))) return null;
+      // redirect: 'error' — um redirecionamento poderia levar a um host fora da lista.
+      const response = await doFetch(cached.url, { signal: AbortSignal.timeout(10_000), redirect: 'error' });
       const contentType = response.headers.get('content-type') ?? '';
-      if (!response.ok || !contentType.startsWith('image/')) {
+      if (!response.ok || !contentType.startsWith('image/') || Number(response.headers.get('content-length') ?? 0) > MAX_IMAGE_BYTES) {
         urls.delete(mediaId);
         return null;
       }
-      return { body: await response.arrayBuffer(), contentType };
+      const body = await response.arrayBuffer();
+      if (body.byteLength > MAX_IMAGE_BYTES) {
+        urls.delete(mediaId);
+        return null;
+      }
+      return { body, contentType };
     },
   };
 }

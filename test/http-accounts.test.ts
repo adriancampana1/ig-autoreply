@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { getAccountByIgId } from '../src/db/repos/accounts.js';
 import { buildTestApp, cookieFrom, form, login } from './helpers/app.js';
 import { seedAccount } from './helpers/db.js';
@@ -82,5 +82,60 @@ describe('contas', () => {
     const blocked = await t.app.inject({ url: `/midia/${account.id}/222`, headers: { cookie: session.cookie } });
     expect(blocked.headers['content-type']).toContain('image/svg+xml'); // placeholder, sem buscar o host desconhecido
     expect(images).toEqual(['https://scontent.cdninstagram.com/a.jpg']);
+  });
+
+  it('state errado ou ausente nunca troca o code por token', async () => {
+    const exchangeCode = vi.fn();
+    const t = await buildTestApp({ oauth: { exchangeCode } });
+    const { cookie } = await startConnect(t);
+    const wrong = await t.app.inject({ url: '/auth/instagram/callback?code=abc&state=falso', headers: { cookie } });
+    expect(wrong.headers.location).toBe('/contas');
+    const again = await startConnect(t);
+    const missing = await t.app.inject({ url: '/auth/instagram/callback?code=abc', headers: { cookie: again.cookie } });
+    expect(missing.headers.location).toBe('/contas');
+    const page = await t.app.inject({ url: '/contas', headers: { cookie: cookieFrom(missing) || again.cookie } });
+    expect(page.body).toContain('Link de conexão expirado');
+    expect(exchangeCode).not.toHaveBeenCalled();
+  });
+
+  it('usuária que cancela no Instagram vê mensagem amigável e nada é conectado', async () => {
+    const exchangeCode = vi.fn();
+    const t = await buildTestApp({ oauth: { exchangeCode } });
+    const { cookie, state } = await startConnect(t);
+    const res = await t.app.inject({ url: `/auth/instagram/callback?error=access_denied&state=${state}`, headers: { cookie } });
+    expect(res.headers.location).toBe('/contas');
+    const page = await t.app.inject({ url: '/contas', headers: { cookie: cookieFrom(res) || cookie } });
+    expect(page.body).toContain('Conexão cancelada no Instagram');
+    expect(exchangeCode).not.toHaveBeenCalled();
+  });
+
+  it('miniatura: recusa http:, redirecionamento e imagens acima de 5 MB (placeholder)', async () => {
+    const images: Array<{ url: string; redirect: unknown }> = [];
+    const big = new Uint8Array(5 * 1024 * 1024 + 1);
+    const fetchImage = (async (url: string | URL | Request, init?: RequestInit) => {
+      images.push({ url: String(url), redirect: init?.redirect });
+      if (String(url).includes('declared')) {
+        return new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/jpeg', 'content-length': String(big.length) } });
+      }
+      return new Response(big, { headers: { 'content-type': 'image/jpeg' } });
+    }) as typeof fetch;
+    const t = await buildTestApp({ fetchImage });
+    const account = seedAccount(t.db, { tokenEnc: '' });
+    t.db.prepare('UPDATE ig_accounts SET token_enc = ? WHERE id = ?').run(t.cipher.encrypt('TOKEN'), account.id);
+    const session = await login(t.app, t.db);
+    const media = (id: string, mediaUrl: string) => ({ id, mediaType: 'IMAGE', permalink: 'p', timestamp: 't', mediaUrl });
+    const get = (id: string) => t.app.inject({ url: `/midia/${account.id}/${id}`, headers: { cookie: session.cookie } });
+
+    t.client.getMedia.mockResolvedValueOnce(media('301', 'http://scontent.cdninstagram.com/a.jpg'));
+    expect((await get('301')).headers['content-type']).toContain('image/svg+xml');
+    expect(images).toHaveLength(0); // http: nem chega a ser buscado
+
+    t.client.getMedia.mockResolvedValueOnce(media('302', 'https://scontent.cdninstagram.com/declared.jpg'));
+    expect((await get('302')).headers['content-type']).toContain('image/svg+xml');
+
+    t.client.getMedia.mockResolvedValueOnce(media('303', 'https://scontent.cdninstagram.com/actual.jpg'));
+    expect((await get('303')).headers['content-type']).toContain('image/svg+xml');
+
+    expect(images.map((i) => i.redirect)).toEqual(['error', 'error']);
   });
 });

@@ -32,8 +32,11 @@ const SESSION_DAYS = 30;
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({
-    // A porta só é publicada em 127.0.0.1 na VPS: apenas o Nginx do host alcança o app.
-    trustProxy: true,
+    // A porta só é publicada em 127.0.0.1 na VPS: apenas o Nginx do host alcança o app. Confia em exatamente
+    // 1 salto (só a conexão direta, hop 0): o Nginx acrescenta o IP real do cliente como última entrada do X-Forwarded-For, e entradas
+    // anteriores (forjáveis pelo cliente) são ignoradas. (`true` confiaria na primeira, burlando o limite de login;
+    // 'loopback' juntaria todos num só IP, pois dentro do container a conexão vem da ponte do Docker.)
+    trustProxy: (_address, hop) => hop < 1,
     logger: deps.logger ?? false,
   });
 

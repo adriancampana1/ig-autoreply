@@ -14,6 +14,7 @@ import { accountStatus } from './views/messages.js';
 async function requireUser(request: FastifyRequest, reply: FastifyReply, deps: AppDeps): Promise<void> {
   const userId = request.session.get('userId');
   if (userId && findUserById(deps.db, userId)) return;
+  if (userId) request.session.delete(); // usuário removido: evita laço entre /entrar e as telas
   if (request.headers['hx-request']) {
     await reply.header('HX-Redirect', '/entrar').code(401).send();
     return;
