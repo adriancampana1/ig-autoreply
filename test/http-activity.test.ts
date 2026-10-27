@@ -58,4 +58,40 @@ describe('atividade (rota)', () => {
     expect(res.body).toContain('Passou do prazo de 7 dias ou a pessoa já recebeu a mensagem');
     expect(res.body).toContain('Cancelada');
   });
+
+  it('aceita valores inválidos de página sem erro', async () => {
+    const t = await buildTestApp();
+    seedAutomation(t.db, seedAccount(t.db).id);
+    const session = await login(t.app, t.db);
+    for (const pagina of ['1.5', 'Infinity', 'abc', '1e20', '-3', '0', '99999999999']) {
+      const res = await t.app.inject({ url: `/atividade?pagina=${pagina}`, headers: { cookie: session.cookie } });
+      expect(res.statusCode, pagina).toBe(200);
+    }
+  });
+
+  it('filtra por conta e preserva os filtros nos links de paginação', async () => {
+    const t = await buildTestApp();
+    const loja = seedAccount(t.db);
+    const outra = seedAccount(t.db, { igId: 'IG2', username: 'outraloja' });
+    const autoLoja = seedAutomation(t.db, loja.id);
+    const autoOutra = seedAutomation(t.db, outra.id);
+    for (let i = 0; i < 21; i += 1) {
+      insertInteraction(t.db, {
+        automationId: autoOutra.id, commentId: `O${i}`, commenterIgsid: `UO${i}`, commenterUsername: `outra${i}`,
+        commentText: 'eu quero', matchedKeyword: 'eu quero', source: 'webhook', status: 'skipped', skipReason: 'already_replied_to_person',
+      }, T0 + i);
+    }
+    insertInteraction(t.db, {
+      automationId: autoLoja.id, commentId: 'L1', commenterIgsid: 'UL1', commenterUsername: 'daloja',
+      commentText: 'eu quero', matchedKeyword: 'eu quero', source: 'webhook', status: 'skipped', skipReason: 'already_replied_to_person',
+    }, T0);
+    const session = await login(t.app, t.db);
+    const res = await t.app.inject({ url: `/atividade?conta=${outra.id}&status=skipped`, headers: { cookie: session.cookie } });
+    expect(res.body).toContain('@outra20');
+    expect(res.body).not.toContain('@daloja');
+    expect(res.body).toMatch(new RegExp(`href="/atividade\\?conta=${outra.id}(&amp;|&)status=skipped(&amp;|&)pagina=2"`));
+    const only = await t.app.inject({ url: `/atividade?conta=${loja.id}`, headers: { cookie: session.cookie } });
+    expect(only.body).toContain('@daloja');
+    expect(only.body).not.toContain('@outra20');
+  });
 });

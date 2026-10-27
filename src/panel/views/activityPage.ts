@@ -49,9 +49,9 @@ export function activityPage(input: {
       ? html`<ul class="space-y-3">${rows.map((row) => html`<li>${card(html`<div class="space-y-3 p-4">
           <div class="flex items-start justify-between gap-2 text-sm">
             <div class="min-w-0"><p class="font-medium">@${row.commenterUsername ?? 'usuário'}</p><p class="truncate text-muted-foreground">em @${row.accountUsername} · ${formatDateTime(row.createdAt)}</p></div>
-            ${row.mediaPermalink ? html`<a href="${row.mediaPermalink}" target="_blank" rel="noopener" class="${buttonClass('ghost', 'min-w-11 px-2')}" aria-label="Abrir post">${icon('ExternalLink')}</a>` : ''}
+            ${row.mediaPermalink ? html`<a href="${row.mediaPermalink}" target="_blank" rel="noopener noreferrer" class="${buttonClass('ghost', 'min-w-11 px-2')}" aria-label="Abrir post no Instagram (nova aba)">${icon('ExternalLink')}</a>` : ''}
           </div>
-          <blockquote class="rounded-md bg-secondary px-3 py-2 text-sm">“${row.commentText ?? ''}”</blockquote>
+          <blockquote class="break-words rounded-md bg-secondary px-3 py-2 text-sm [overflow-wrap:anywhere]">“${row.commentText ?? ''}”</blockquote>
           ${row.status === 'skipped'
             ? html`<p class="text-xs text-muted-foreground">${SKIP_REASON_TEXT[row.skipReason ?? ''] ?? 'Ignorado'}</p>`
             : html`<div class="flex flex-wrap gap-4">${jobBadge('Comentário', row.publicStatus, row.publicFailReason)}${jobBadge('Direct', row.dmStatus, row.dmFailReason)}</div>`}
