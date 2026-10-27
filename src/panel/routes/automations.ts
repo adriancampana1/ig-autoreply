@@ -74,8 +74,14 @@ export async function registerAutomationRoutes(app: FastifyInstance, ctx: PanelC
     if (!result.ok) return renderForm(request, reply, values, result.errors);
     const account = getAccountById(ctx.db, result.data.accountId);
     if (!account?.tokenEnc) return renderForm(request, reply, values, { account: 'Conta indisponível. Reconecte em Contas.' });
+    let media;
     try {
-      const media = await ctx.client.getMedia(ctx.cipher.decrypt(account.tokenEnc), result.data.mediaId);
+      media = await ctx.client.getMedia(ctx.cipher.decrypt(account.tokenEnc), result.data.mediaId);
+    } catch (error) {
+      request.log.warn({ err: error }, 'falha ao confirmar o post');
+      return renderForm(request, reply, values, { general: 'Não foi possível confirmar o post no Instagram. Tente de novo.' });
+    }
+    try {
       createAutomation(
         ctx.db,
         { ...result.data, mediaType: media.mediaType, mediaPermalink: media.permalink, mediaCaption: media.caption?.slice(0, 300) },
@@ -83,8 +89,8 @@ export async function registerAutomationRoutes(app: FastifyInstance, ctx: PanelC
       );
     } catch (error) {
       if (error instanceof DuplicateAutomationError) return renderForm(request, reply, values, { media: 'Este post já tem uma automação.' });
-      request.log.warn({ err: error }, 'falha ao criar automação');
-      return renderForm(request, reply, values, { general: 'Não foi possível confirmar o post no Instagram. Tente de novo.' });
+      request.log.error({ err: error }, 'falha ao salvar automação');
+      return renderForm(request, reply, values, { general: 'Não foi possível salvar. Tente de novo.' });
     }
     setFlash(request, { kind: 'success', message: 'Automação criada e ativa!' });
     return reply.redirect('/automacoes');
@@ -122,7 +128,15 @@ export async function registerAutomationRoutes(app: FastifyInstance, ctx: PanelC
   for (const [action, active] of [['ativar', true], ['pausar', false]] as const) {
     app.post(`/automacoes/:id/${action}`, async (request, reply) => {
       const id = Number((request.params as { id: string }).id);
-      if (!getAutomation(ctx.db, id)) return reply.code(404).send();
+      const automation = getAutomation(ctx.db, id);
+      if (!automation) return reply.code(404).send();
+      if (active) {
+        const account = getAccountById(ctx.db, automation.accountId);
+        if (!account || !account.tokenEnc || account.status === 'disconnected' || account.status === 'reconnect_required') {
+          setFlash(request, { kind: 'error', message: 'Reconecte a conta do Instagram antes de ativar esta automação.' });
+          return redirectAfterAction(request, reply, '/automacoes');
+        }
+      }
       setAutomationActive(ctx.db, id, active, ctx.now());
       const item = summary(id)!;
       if (request.headers['hx-request']) return reply.type('text/html').send(automationCard(item).value);
