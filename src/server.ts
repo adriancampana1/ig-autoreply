@@ -8,6 +8,7 @@ import { startScheduler, type Health } from './engine/scheduler.js';
 import { runWorkerTick } from './engine/worker.js';
 import { createInstagramClient } from './instagram/client.js';
 import { createInstagramOAuth } from './instagram/oauth.js';
+import { serializeRequest } from './http/logSerializers.js';
 import { createTokenCipher } from './lib/crypto.js';
 import { OAUTH_CALLBACK_PATH } from './panel/routes/accounts.js';
 
@@ -37,7 +38,9 @@ const app = await buildApp({
   random,
   logger: {
     level: config.NODE_ENV === 'production' ? 'info' : 'debug',
-    redact: ['req.headers.cookie', 'req.headers["x-hub-signature-256"]', 'req.query.code', '*.access_token', '*.token'],
+    // A query string (OAuth code/state, hub.verify_token) e os cabeçalhos nunca entram no log: ver serializeRequest.
+    serializers: { req: serializeRequest },
+    redact: ['req.headers.cookie', 'req.headers["x-hub-signature-256"]', 'req.query.code', '*.access_token', '*.token', '*.client_secret', '*.code'],
   },
 });
 const log = app.log;
@@ -55,7 +58,13 @@ const scheduler = startScheduler(
       },
       runOnStart: true,
     },
-    { name: 'reconciler', intervalMs: 10 * 60_000, run: () => reconcileOnce({ db, client, decryptToken, now, random, log }) },
+    {
+      name: 'reconciler',
+      intervalMs: 10 * 60_000,
+      // Roda também ao subir: cobre lacunas de webhook durante a indisponibilidade sem esperar 10 min.
+      runOnStart: true,
+      run: () => reconcileOnce({ db, client, decryptToken, now, random, log }),
+    },
     {
       name: 'maintenance',
       intervalMs: 6 * 60 * 60_000,
@@ -72,15 +81,33 @@ const scheduler = startScheduler(
 
 await app.listen({ host: '0.0.0.0', port: config.PORT });
 
+const FORCED_EXIT_MS = 8_000;
 let closing = false;
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, async () => {
     if (closing) return;
     closing = true;
     log.info({ signal }, 'encerrando');
-    await scheduler.stop();
-    await app.close();
-    db.close();
-    process.exit(0);
+    // Se scheduler.stop()/app.close() travarem, sai à força para o orquestrador não esperar o SIGKILL.
+    setTimeout(() => {
+      log.error({ signal }, 'encerramento excedeu o prazo; saindo à força');
+      process.exit(1);
+    }, FORCED_EXIT_MS).unref();
+    let exitCode = 0;
+    try {
+      await scheduler.stop();
+      await app.close();
+    } catch (error) {
+      exitCode = 1;
+      log.error({ err: error }, 'falha ao encerrar');
+    } finally {
+      try {
+        db.close();
+      } catch (error) {
+        exitCode = 1;
+        log.error({ err: error }, 'falha ao fechar o banco');
+      }
+    }
+    process.exit(exitCode);
   });
 }

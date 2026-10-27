@@ -18,11 +18,18 @@ const password = randomToken(12);
 const passwordHash = await hash(password);
 
 if (command === 'create') {
-  if (findUserByEmail(db, email)) {
+  const alreadyExists = () => {
     console.error('Já existe um usuário com este e-mail. Use reset-password.');
     process.exit(1);
+  };
+  if (findUserByEmail(db, email)) alreadyExists();
+  try {
+    createUser(db, email, passwordHash, Date.now());
+  } catch (error) {
+    // Corrida entre dois `create` simultâneos: a restrição UNIQUE do banco é a garantia final.
+    if ((error as { code?: string }).code?.startsWith('SQLITE_CONSTRAINT')) alreadyExists();
+    throw error;
   }
-  createUser(db, email, passwordHash, Date.now());
 } else if (!setUserPassword(db, email, passwordHash)) {
   console.error('Usuário não encontrado.');
   process.exit(1);
