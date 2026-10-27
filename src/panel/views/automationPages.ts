@@ -57,7 +57,7 @@ export function automationCard(item: AutomationSummary): SafeHtml {
             role="switch" aria-checked="${item.isActive ? 'true' : 'false'}" aria-label="Automação do post ${postLabel(item)}"
             class="group/switch inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
             <span class="relative inline-flex h-6 w-11 items-center rounded-full bg-control transition-colors duration-200 ease-out-quart group-aria-checked/switch:bg-primary group-[.htmx-request]/switch:opacity-70">
-              <span class="inline-block size-5 translate-x-0.5 rounded-full bg-thumb shadow-sm transition-transform duration-200 ease-out-quart group-aria-checked/switch:translate-x-5.5"></span>
+              <span class="inline-block size-5 translate-x-0.5 rounded-full bg-thumb shadow-sm transition-[translate,background-color] duration-200 ease-out-quart group-aria-checked/switch:translate-x-5.5 group-aria-checked/switch:bg-primary-foreground"></span>
             </span>
           </button>
         </div>
@@ -140,7 +140,7 @@ export function automationFormPage(input: {
         : formSection(1, 'post-title', 'Conta e post', 'Escolha a conta e toque no post que vai ter respostas automáticas.', html`
             <div class="space-y-2">
               <label for="accountId" class="text-sm font-medium">Conta</label>
-              <select id="accountId" name="accountId" class="${inputClass()}" ${errors.account ? html`aria-invalid="true" aria-describedby="account-error"` : ''} hx-get="/automacoes/posts" hx-target="#post-picker" hx-trigger="change, load" hx-indicator="#post-picker"
+              <select id="accountId" name="accountId" class="${inputClass('truncate pr-10')}" ${errors.account ? html`aria-invalid="true" aria-describedby="account-error"` : ''} hx-get="/automacoes/posts" hx-target="#post-picker" hx-trigger="change, load" hx-indicator="#post-picker"
                 hx-vals='{"selected": "${values.mediaId ?? ''}"}'>
                 ${input.accounts.map((a) => html`<option value="${a.id}" ${a.id === values.accountId ? 'selected' : ''}>@${a.username}</option>`)}
               </select>
@@ -149,7 +149,8 @@ export function automationFormPage(input: {
             <fieldset class="space-y-2" ${errors.media ? html`aria-describedby="media-error"` : ''}>
               <legend class="mb-2 text-sm font-medium">Post</legend>
               ${fieldError(errors.media, 'media-error')}
-              <div id="post-picker" class="min-h-24">${postSkeleton()}</div>
+              <div id="post-picker" class="min-h-24" aria-busy="true">${postSkeleton()}</div>
+              <p id="post-picker-status" class="sr-only" role="status" aria-live="polite"></p>
             </fieldset>`)}
       ${formSection(step(2), 'keywords-title', 'Palavras-chave', 'Separe por vírgula. Maiúsculas e acentos não importam. Ex.: EU QUERO, link', html`
         <div class="space-y-2">
@@ -194,7 +195,7 @@ export function automationFormPage(input: {
 
 export function mediaPicker(accountId: number, media: MediaItem[], takenMediaIds: Set<string>, selected?: string): SafeHtml {
   if (!media.length) {
-    return html`<p class="rounded-lg border border-dashed border-input px-4 py-8 text-center text-sm text-muted-foreground">Nenhum post encontrado nesta conta.</p>`;
+    return html`<p class="rounded-lg border border-dashed border-outline px-4 py-8 text-center text-sm text-muted-foreground">Nenhum post encontrado nesta conta.</p>`;
   }
   return html`<div class="grid grid-cols-3 gap-1.5 sm:grid-cols-4 sm:gap-2">
     ${media.map((item) => {

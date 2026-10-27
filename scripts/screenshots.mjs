@@ -1,6 +1,6 @@
 // Captura as telas do painel (mobile claro + desktop escuro) para revisão visual.
 // Uso: BASE_URL=http://localhost:3000 LOGIN_EMAIL=... LOGIN_PASSWORD=... node scripts/screenshots.mjs
-// Requer: npm i -D playwright && npx playwright install chromium
+// Requer: npm i -D playwright@^1.64.1 && npx playwright install chromium
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
 

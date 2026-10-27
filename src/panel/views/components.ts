@@ -28,7 +28,7 @@ const BUTTON_BASE =
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
   primary: 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90',
   secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/70',
-  outline: 'border border-input bg-card shadow-xs hover:bg-accent',
+  outline: 'border border-outline bg-card shadow-xs hover:bg-accent',
   ghost: 'hover:bg-accent',
   destructive: 'bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90',
 };
@@ -93,7 +93,7 @@ export function alertBox(tone: Exclude<Tone, 'neutral'>, title: string, body?: S
 }
 
 export function emptyState(iconName: IconName, title: string, text: string, action?: SafeHtml): SafeHtml {
-  return html`<div class="flex flex-col items-center gap-2 rounded-xl border border-dashed border-input px-6 py-14 text-center">
+  return html`<div class="flex flex-col items-center gap-2 rounded-xl border border-dashed border-outline px-6 py-14 text-center">
     <div class="mb-2 grid size-12 place-items-center rounded-full bg-secondary text-muted-foreground">${icon(iconName, 'size-5')}</div>
     <h2 class="text-base font-semibold">${title}</h2>
     <p class="max-w-xs text-sm text-muted-foreground text-pretty">${text}</p>

@@ -48,11 +48,11 @@ export function activityPage(input: {
   return html`${pageHeader('Atividade', 'Comentários com palavra-chave e o que foi enviado para cada pessoa.')}
     <form method="get" action="/atividade" class="grid grid-cols-2 gap-2 sm:flex"
       hx-get="/atividade" hx-trigger="change" hx-target="body" hx-push-url="true">
-      <select name="conta" class="${inputClass('min-w-0 truncate sm:w-56')}" aria-label="Conta">
+      <select name="conta" class="${inputClass('min-w-0 truncate pr-10 sm:w-56')}" aria-label="Conta">
         <option value="">Todas as contas</option>
         ${input.accounts.map((a) => html`<option value="${a.id}" ${a.id === filter.accountId ? 'selected' : ''}>@${a.username}</option>`)}
       </select>
-      <select name="status" class="${inputClass('min-w-0 sm:w-44')}" aria-label="Situação">
+      <select name="status" class="${inputClass('min-w-0 truncate pr-10 sm:w-44')}" aria-label="Situação">
         ${STATUS_FILTERS.map((s) => html`<option value="${s.value}" ${s.value === (filter.status ?? '') ? 'selected' : ''}>${s.label}</option>`)}
       </select>
       <noscript><button class="${buttonClass('outline')}">Filtrar</button></noscript>

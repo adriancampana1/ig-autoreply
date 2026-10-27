@@ -115,6 +115,27 @@
     if (isSwitch(element) && !event.detail.successful && element.isConnected) flip(element);
   });
 
+  // Grade de posts: aria-busy enquanto carrega e um aviso educado (role=status) para leitores de tela.
+  function isPostPicker(event) {
+    return event.detail.target instanceof Element && event.detail.target.id === 'post-picker';
+  }
+  function setPickerStatus(text) {
+    const status = document.getElementById('post-picker-status');
+    if (status) status.textContent = text;
+  }
+  document.addEventListener('htmx:beforeRequest', (event) => {
+    if (!isPostPicker(event)) return;
+    event.detail.target.setAttribute('aria-busy', 'true');
+    setPickerStatus('Carregando posts…');
+  });
+  document.addEventListener('htmx:afterRequest', (event) => {
+    if (!isPostPicker(event)) return;
+    const picker = event.detail.target;
+    picker.setAttribute('aria-busy', 'false');
+    const count = picker.querySelectorAll('input[name="mediaId"]').length;
+    setPickerStatus(!event.detail.successful ? 'Não foi possível carregar os posts.' : count ? `${count} posts carregados.` : '');
+  });
+
   function init(root) {
     setupByteCounters(root);
     setupInsertButtons(root);
