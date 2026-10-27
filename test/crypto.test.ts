@@ -49,6 +49,12 @@ describe('parseSignedRequest', () => {
     expect(parseSignedRequest(req, ['x', 'app-secret'])).toMatchObject({ user_id: '12345' });
   });
 
+  it('preserva exatamente um user_id numérico acima de 2^53', () => {
+    const encoded = Buffer.from('{"algorithm":"HMAC-SHA256","user_id":17841405793187219,"issued_at":1}').toString('base64url');
+    const req = `${createHmac('sha256', 'app-secret').update(encoded).digest('base64url')}.${encoded}`;
+    expect(parseSignedRequest(req, ['app-secret'])?.user_id).toBe('17841405793187219');
+  });
+
   it('retorna null com assinatura errada ou formato inválido', () => {
     expect(parseSignedRequest(make({ algorithm: 'HMAC-SHA256', user_id: 1 }, 'a'), ['b'])).toBeNull();
     expect(parseSignedRequest('sem-ponto', ['b'])).toBeNull();

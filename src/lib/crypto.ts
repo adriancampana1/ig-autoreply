@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { quoteLargeIds } from './json.js';
 
 const ALGORITHM = 'aes-256-gcm';
 
@@ -60,7 +61,7 @@ export function parseSignedRequest(signedRequest: string, secrets: readonly stri
   );
   if (!valid) return null;
   try {
-    const payload = JSON.parse(base64UrlDecode(encodedPayload).toString('utf8')) as SignedRequestPayload;
+    const payload = JSON.parse(quoteLargeIds(base64UrlDecode(encodedPayload).toString('utf8'))) as SignedRequestPayload;
     if (payload.algorithm?.toUpperCase() !== 'HMAC-SHA256' || payload.user_id === undefined) return null;
     return { ...payload, user_id: String(payload.user_id) };
   } catch {

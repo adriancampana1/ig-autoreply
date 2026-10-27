@@ -55,12 +55,14 @@ export function hasActedForPerson(db: DB, automationId: number, commenterIgsid: 
 
 /**
  * Recalcula o status agregado a partir dos jobs: done, partial, failed ou queued.
- * Sem jobs (ex.: interação pulada), mantém o status atual.
+ * Sem jobs (ex.: interação pulada), mantém o status atual. Interação inexistente (ex.: apagada pela
+ * exclusão de dados enquanto o worker aguardava a API) devolve null, sem UPDATE.
  */
-export function refreshInteractionStatus(db: DB, interactionId: number): InteractionStatus {
+export function refreshInteractionStatus(db: DB, interactionId: number): InteractionStatus | null {
   const jobs = db.prepare('SELECT status FROM jobs WHERE interaction_id = ?').all(interactionId) as Array<{ status: string }>;
   if (jobs.length === 0) {
-    return (db.prepare('SELECT status FROM interactions WHERE id = ?').get(interactionId) as { status: InteractionStatus }).status;
+    const row = db.prepare('SELECT status FROM interactions WHERE id = ?').get(interactionId) as { status: InteractionStatus } | undefined;
+    return row?.status ?? null;
   }
   const statuses = jobs.map((job) => job.status);
   let status: InteractionStatus;
@@ -68,8 +70,8 @@ export function refreshInteractionStatus(db: DB, interactionId: number): Interac
   else if (statuses.every((s) => s === 'done')) status = 'done';
   else if (statuses.some((s) => s === 'done')) status = 'partial';
   else status = 'failed';
-  db.prepare('UPDATE interactions SET status = ? WHERE id = ?').run(status, interactionId);
-  return status;
+  const updated = db.prepare('UPDATE interactions SET status = ? WHERE id = ?').run(status, interactionId);
+  return updated.changes === 0 ? null : status;
 }
 
 export interface ActivityFilter {

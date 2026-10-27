@@ -1,4 +1,5 @@
 import { GraphApiError } from './errors.js';
+import { quoteLargeIds } from '../lib/json.js';
 
 export type FetchFn = typeof fetch;
 
@@ -88,11 +89,6 @@ function regainMinutes(header: string | null): number | undefined {
   } catch {
     return undefined;
   }
-}
-
-/** Meta pode mandar IDs como número JSON acima de 2^53, que o JSON.parse corromperia: vira string antes do parse. */
-function quoteLargeIds(text: string): string {
-  return text.replace(/"(id|user_id)"\s*:\s*(-?\d+)(?![\d.eE])/g, '"$1":"$2"');
 }
 
 interface ErrorBody {

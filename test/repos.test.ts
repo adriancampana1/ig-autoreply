@@ -266,4 +266,10 @@ describe('desconexão, reconexão e status', () => {
     expect(refreshInteractionStatus(db, iid)).toBe('skipped');
     expect(db.prepare('SELECT status FROM interactions WHERE id = ?').get(iid)).toEqual({ status: 'skipped' });
   });
+
+  it('interação inexistente (ex.: apagada pela exclusão de dados) devolve null sem lançar', () => {
+    const db = makeDb();
+    expect(refreshInteractionStatus(db, 9999)).toBeNull();
+    expect(db.prepare('SELECT COUNT(*) AS n FROM interactions').get()).toEqual({ n: 0 });
+  });
 });
