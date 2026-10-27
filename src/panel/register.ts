@@ -6,6 +6,7 @@ import { ensureCsrfToken, takeFlash, verifyCsrf } from '../http/session.js';
 import { createThumbnailService } from '../media/thumbnails.js';
 import { registerAccountRoutes } from './routes/accounts.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerAutomationRoutes } from './routes/automations.js';
 import type { PanelContext } from './context.js';
 import { alertBox } from './views/components.js';
 import { layout } from './views/layout.js';
@@ -53,5 +54,6 @@ export async function registerPanel(app: FastifyInstance, deps: AppDeps): Promis
     protectedScope.addHook('preHandler', (request, reply) => requireUser(request, reply, deps));
     protectedScope.get('/', async (_request, reply) => reply.redirect('/automacoes'));
     await registerAccountRoutes(protectedScope, ctx);
+    await registerAutomationRoutes(protectedScope, ctx);
   });
 }
