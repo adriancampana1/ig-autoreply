@@ -49,6 +49,14 @@ describe('handleComment', () => {
     expect(handleComment(deps, comment({ fromId: 'IG1' }))).toEqual({ kind: 'ignored', reason: 'self_comment' });
   });
 
+  it('ignora comentário da própria conta identificado pelo @ (sem diferenciar maiúsculas)', () => {
+    const { deps, comment } = setup();
+    expect(handleComment(deps, comment({ fromId: 'IGSID-DA-LOJA', fromUsername: 'LOJA' }))).toEqual({
+      kind: 'ignored',
+      reason: 'self_comment',
+    });
+  });
+
   it('ignora post sem automação ativa e texto sem palavra-chave', () => {
     const { db, automation, deps, comment } = setup();
     expect(handleComment(deps, comment({ text: 'que lindo' }))).toEqual({ kind: 'ignored', reason: 'no_keyword' });
@@ -65,6 +73,28 @@ describe('handleComment', () => {
     });
     const late = { ...deps, now: () => T0 + 8 * 86_400_000 };
     expect(handleComment(late, comment({ source: 'reconciler', createdAt: T0 + 1 }))).toEqual({ kind: 'ignored', reason: 'too_old' });
+  });
+
+  it('comentário feito enquanto a automação estava pausada não é respondido ao reativar', () => {
+    const { db, automation, deps, comment } = setup();
+    const H = 3_600_000;
+    setAutomationActive(db, automation.id, false, T0 + H);
+    setAutomationActive(db, automation.id, true, T0 + 30 * H);
+    const later = { ...deps, now: () => T0 + 30 * H + 1000 };
+    expect(handleComment(later, comment({ source: 'reconciler', createdAt: T0 + 2 * H }))).toEqual({
+      kind: 'ignored',
+      reason: 'before_automation',
+    });
+    expect(handleComment(later, comment({ commentId: 'C2', source: 'reconciler', createdAt: T0 + 30 * H + 500 }))).toMatchObject({
+      kind: 'queued',
+    });
+  });
+
+  it('reativar uma automação que já está ativa não move o marco de ativação', () => {
+    const { db, automation, deps, comment } = setup();
+    setAutomationActive(db, automation.id, true, T0 + 5_000);
+    const later = { ...deps, now: () => T0 + 6_000 };
+    expect(handleComment(later, comment({ source: 'reconciler', createdAt: T0 + 2_000 }))).toMatchObject({ kind: 'queued' });
   });
 
   it('deduplica o mesmo comentário (reentrega do webhook)', () => {

@@ -10,6 +10,7 @@ export function createFakeInstagram(overrides: Partial<InstagramClient> = {}): F
     listMedia: vi.fn<InstagramClient['listMedia']>(async () => []),
     getMedia: vi.fn<InstagramClient['getMedia']>(),
     listComments: vi.fn<InstagramClient['listComments']>(async () => ({ comments: [] })),
+    isCommentHidden: vi.fn<InstagramClient['isCommentHidden']>(async () => false),
     replyToComment: vi.fn<InstagramClient['replyToComment']>(async () => ({ id: 'REPLY1' })),
     sendPrivateReply: vi.fn<InstagramClient['sendPrivateReply']>(async () => ({ messageId: 'MSG1' })),
     subscribeToComments: vi.fn<InstagramClient['subscribeToComments']>(async () => undefined),

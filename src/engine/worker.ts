@@ -7,7 +7,9 @@ import {
   claimNextDueJob,
   completeJob,
   countActionsSince,
+  deferPendingJobsOfAccount,
   failJob,
+  failPendingJobsOfInteraction,
   lastActionAt,
   rescheduleJob,
   type ClaimedJob,
@@ -29,11 +31,15 @@ export interface WorkerDeps {
 
 export type JobOutcome = 'done' | 'failed' | 'rescheduled';
 
+/** O comentário foi ocultado pela dona da conta: nada deve ser enviado (nem a resposta pública, nem a DM). */
+class CommentHiddenError extends Error {}
+
 async function execute(deps: WorkerDeps, job: ClaimedJob, account: Account): Promise<string> {
   const automation = getAutomation(deps.db, job.automationId);
   if (!automation) throw new Error('Automação removida');
   const token = deps.decryptToken(account.tokenEnc!);
   if (job.type === 'public_reply') {
+    if (await deps.client.isCommentHidden(token, job.commentId)) throw new CommentHiddenError();
     const index = pickVariationIndex(automation.publicVariations.length, automation.lastVariationIndex, deps.random);
     const text = renderReply(automation.publicVariations[index]!, job.commenterUsername);
     const { id } = await deps.client.replyToComment(token, job.commentId, text);
@@ -80,6 +86,15 @@ export async function processJob(deps: WorkerDeps, job: ClaimedJob): Promise<Job
     deps.log.info({ jobId: job.id, type: job.type, accountId: account.id }, 'ação executada');
     return 'done';
   } catch (error) {
+    if (error instanceof CommentHiddenError) {
+      // A conferência foi uma chamada real à API: failJob registra last_attempt_at para o espaçamento.
+      const at = deps.now();
+      failJob(db, job.id, { reason: 'comment_hidden' }, at);
+      failPendingJobsOfInteraction(db, job.interactionId, 'comment_hidden', at);
+      refreshInteractionStatus(db, job.interactionId);
+      deps.log.info({ jobId: job.id, accountId: account.id }, 'comentário oculto: nada enviado');
+      return 'failed';
+    }
     const c = classifyError(error);
     const at = deps.now();
     const details = { reason: c.reason, code: c.code, message: c.message };
@@ -90,9 +105,12 @@ export async function processJob(deps: WorkerDeps, job: ClaimedJob): Promise<Job
         setAccountStatus(db, account.id, 'reconnect_required', at, { lastError: c.message });
         rescheduleJob(db, job.id, at, at, { countAttempt: false, recordAttempt: true, ...details });
         return 'rescheduled';
-      case 'rate_limit':
-        rescheduleJob(db, job.id, at + (c.retryAfterMs ?? 15 * 60_000), at, { countAttempt: false, recordAttempt: true, ...details });
+      case 'rate_limit': {
+        const retryAt = at + (c.retryAfterMs ?? 15 * 60_000);
+        rescheduleJob(db, job.id, retryAt, at, { countAttempt: false, recordAttempt: true, ...details });
+        deferPendingJobsOfAccount(db, account.id, retryAt, at);
         return 'rescheduled';
+      }
       case 'abuse': {
         const pausedUntil = at + SAFETY_PAUSE_MS;
         setAccountStatus(db, account.id, 'paused_by_safety', at, { lastError: c.message, pausedUntil });

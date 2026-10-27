@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { getAccountById } from '../src/db/repos/accounts.js';
-import { getAutomation } from '../src/db/repos/automations.js';
+import { getAutomation, setAutomationActive, setLastReconciledAt } from '../src/db/repos/automations.js';
 import { RECONCILE_MAX_PAGES, reconcileOnce } from '../src/engine/reconciler.js';
 import { GraphApiError } from '../src/instagram/errors.js';
 import { makeDb, seedAccount, seedAutomation, T0 } from './helpers/db.js';
@@ -34,6 +34,41 @@ describe('reconcileOnce', () => {
     expect(getAutomation(db, automation.id)!.lastReconciledAt).toBe(now);
     const rows = db.prepare('SELECT comment_id AS id, source FROM interactions').all();
     expect(rows).toEqual([{ id: 'c2', source: 'reconciler' }]);
+  });
+
+  it('comentário feito enquanto a automação estava pausada não é enfileirado ao reativar', async () => {
+    const db = makeDb();
+    const account = seedAccount(db);
+    const automation = seedAutomation(db, account.id);
+    const H = 3_600_000;
+    setLastReconciledAt(db, automation.id, T0);
+    setAutomationActive(db, automation.id, false, T0 + H);
+    const now = T0 + 30 * H;
+    setAutomationActive(db, automation.id, true, now);
+    const listComments = vi.fn(async () => ({
+      comments: [{ id: 'paused', text: 'eu quero', timestamp: iso(T0 + 2 * H), fromId: 'U1', fromUsername: 'ana' }],
+    }));
+    const deps = {
+      db, client: createFakeInstagram({ listComments }), decryptToken: (e: string) => e,
+      now: () => now + 60_000, random: () => 0, log: silentLog,
+    };
+    expect(await reconcileOnce(deps)).toEqual({ checked: 1, queued: 0 });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM interactions').get()).toEqual({ n: 0 });
+  });
+
+  it('não enfileira comentário da própria conta (from.id escopado diferente, mesmo @)', async () => {
+    const db = makeDb();
+    const account = seedAccount(db);
+    seedAutomation(db, account.id);
+    const listComments = vi.fn(async () => ({
+      comments: [{ id: 'own', text: 'eu quero', timestamp: iso(T0 + 50 * 60_000), fromId: 'OUTRO-ID', fromUsername: 'Loja' }],
+    }));
+    const deps = {
+      db, client: createFakeInstagram({ listComments }), decryptToken: (e: string) => e,
+      now: () => T0 + 60 * 60_000, random: () => 0, log: silentLog,
+    };
+    expect(await reconcileOnce(deps)).toEqual({ checked: 1, queued: 0 });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM interactions').get()).toEqual({ n: 0 });
   });
 
   it('token inválido durante a varredura marca a conta para reconectar', async () => {

@@ -6,6 +6,7 @@ import { handleComment } from '../src/engine/matcher.js';
 import { SAFETY_PAUSE_MS } from '../src/engine/pacing.js';
 import { processJob, runWorkerTick, type WorkerDeps } from '../src/engine/worker.js';
 import { GraphApiError } from '../src/instagram/errors.js';
+import { FAIL_REASON_TEXT } from '../src/panel/views/messages.js';
 import { makeDb, seedAccount, seedAutomation, T0 } from './helpers/db.js';
 import { createFakeInstagram, silentLog } from './helpers/fakeInstagram.js';
 
@@ -127,6 +128,77 @@ describe('runWorkerTick', () => {
     await runWorkerTick(t.deps);
     expect(t.jobRows()[0]).toMatchObject({ status: 'pending', attempts: 0 });
     expect(lastActionAt(t.db, t.account.id)).toBe(attemptAt);
+  });
+
+  it('comentário oculto: não responde, falha a resposta e a DM com "comment_hidden" e registra a tentativa', async () => {
+    const t = setup({ isCommentHidden: async () => true });
+    t.comment('C1');
+    t.advance(15_000);
+    await runWorkerTick(t.deps);
+    expect(t.client.isCommentHidden).toHaveBeenCalledWith('plain:enc-token', 'C1');
+    expect(t.client.replyToComment).not.toHaveBeenCalled();
+    t.advance(60_000);
+    await runWorkerTick(t.deps);
+    expect(t.client.sendPrivateReply).not.toHaveBeenCalled();
+    expect(t.jobRows().map((j) => [j.type, j.status, j.reason])).toEqual([
+      ['public_reply', 'failed', 'comment_hidden'],
+      ['private_reply', 'failed', 'comment_hidden'],
+    ]);
+    expect(lastActionAt(t.db, t.account.id)).toBe(T0 + 15_000);
+    const status = t.db.prepare('SELECT status FROM interactions').get() as { status: string };
+    expect(status.status).toBe('failed');
+    expect(FAIL_REASON_TEXT.comment_hidden).toBe('O comentário foi ocultado — nada foi enviado');
+  });
+
+  it('comentário visível: confere antes e responde em seguida', async () => {
+    const t = setup();
+    t.comment('C1');
+    t.advance(15_000);
+    await runWorkerTick(t.deps);
+    expect(t.client.isCommentHidden).toHaveBeenCalledTimes(1);
+    expect(t.client.replyToComment).toHaveBeenCalledTimes(1);
+    expect(t.client.isCommentHidden.mock.invocationCallOrder[0]!).toBeLessThan(t.client.replyToComment.mock.invocationCallOrder[0]!);
+  });
+
+  it('erro na conferência de oculto é tratado como erro da API (classifyError)', async () => {
+    const t = setup({ isCommentHidden: async () => { throw new GraphApiError('too many calls', 400, 4); } });
+    t.comment('C1');
+    t.advance(15_000);
+    await runWorkerTick(t.deps);
+    expect(t.client.replyToComment).not.toHaveBeenCalled();
+    expect(t.jobRows()[0]).toMatchObject({ status: 'pending', attempts: 0, reason: 'rate_limited' });
+    expect(lastActionAt(t.db, t.account.id)).toBe(T0 + 15_000);
+
+    const gone = setup({ isCommentHidden: async () => { throw new GraphApiError('Unsupported get request', 400, 100); } });
+    gone.comment('C1');
+    gone.advance(15_000);
+    await runWorkerTick(gone.deps);
+    expect(gone.jobRows()[0]).toMatchObject({ status: 'failed', reason: 'comment_unavailable' });
+  });
+
+  it('rate limit vale para a conta: adia todos os jobs pendentes dela até o horário de retentativa', async () => {
+    const t = setup({ replyToComment: async () => { throw new GraphApiError('too many calls', 400, 4); } });
+    t.comment('C1', 'U1');
+    t.comment('C2', 'U2');
+    t.comment('C3', 'U3');
+    const other = seedAccount(t.db, { igId: 'IG2', username: 'outra' });
+    seedAutomation(t.db, other.id, { mediaId: 'M2' });
+    handleComment({ db: t.db, now: () => t.getNow(), random: () => 0 }, {
+      accountIgId: 'IG2', commentId: 'O1', fromId: 'U9', isSelf: false, text: 'eu quero', mediaId: 'M2', source: 'webhook',
+    });
+    t.advance(15_000);
+    const retryAt = t.getNow() + 15 * 60_000;
+    expect(await processJob(t.deps, claimNextDueJob(t.db, t.getNow())!)).toBe('rescheduled');
+    const pending = t.db.prepare("SELECT account_id AS accountId, run_at AS runAt FROM jobs WHERE status = 'pending'").all() as Array<{
+      accountId: number; runAt: number;
+    }>;
+    const mine = pending.filter((j) => j.accountId === t.account.id);
+    expect(mine).toHaveLength(6);
+    for (const job of mine) expect(job.runAt).toBeGreaterThanOrEqual(retryAt);
+    for (const job of pending.filter((j) => j.accountId === other.id)) expect(job.runAt).toBeLessThan(retryAt);
+    t.advance(60_000);
+    expect(await runWorkerTick(t.deps)).toBe(1); // só a conta IG2 age
+    expect(t.client.replyToComment).toHaveBeenCalledTimes(2);
   });
 
   it('conta desconectada: cancela o job sem chamar a API', async () => {

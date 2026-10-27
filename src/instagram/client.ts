@@ -39,6 +39,8 @@ export interface InstagramClient {
   listMedia(token: string, limit?: number): Promise<MediaItem[]>;
   getMedia(token: string, mediaId: string): Promise<MediaItem>;
   listComments(token: string, mediaId: string, after?: string): Promise<{ comments: CommentItem[]; nextCursor?: string }>;
+  /** O comentário foi ocultado pela dona da conta? (conferido antes de responder em público) */
+  isCommentHidden(token: string, commentId: string): Promise<boolean>;
   replyToComment(token: string, commentId: string, message: string): Promise<{ id: string }>;
   sendPrivateReply(token: string, igId: string, commentId: string, text: string): Promise<{ messageId: string }>;
   subscribeToComments(token: string): Promise<void>;
@@ -223,6 +225,11 @@ export function createInstagramClient(options: InstagramClientOptions): Instagra
         })),
         nextCursor: raw.paging?.next ? raw.paging.cursors?.after : undefined,
       };
+    },
+
+    async isCommentHidden(token, commentId) {
+      const raw = await call<{ hidden?: boolean }>(token, 'GET', `/${commentId}`, { fields: 'hidden' });
+      return raw.hidden === true;
     },
 
     async replyToComment(token, commentId, message) {

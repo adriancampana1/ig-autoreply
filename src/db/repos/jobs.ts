@@ -96,6 +96,20 @@ export function rescheduleJob(
   );
 }
 
+/** Limite de chamadas vale para a conta inteira: nenhum job pendente dela roda antes de `runAt`. */
+export function deferPendingJobsOfAccount(db: DB, accountId: number, runAt: number, now: number): void {
+  db.prepare(
+    "UPDATE jobs SET run_at = MAX(run_at, ?), updated_at = ? WHERE account_id = ? AND status = 'pending'",
+  ).run(runAt, now, accountId);
+}
+
+/** Falha os jobs ainda pendentes de uma interação (ex.: a DM quando o comentário foi ocultado), sem registrar tentativa. */
+export function failPendingJobsOfInteraction(db: DB, interactionId: number, reason: string, now: number): void {
+  db.prepare(
+    "UPDATE jobs SET status = 'failed', fail_reason = ?, updated_at = ? WHERE interaction_id = ? AND status = 'pending'",
+  ).run(reason, now, interactionId);
+}
+
 /** Cancela um job (ex.: conta desconectada) registrando o motivo. */
 export function cancelJob(db: DB, id: number, reason: string, now: number): void {
   db.prepare("UPDATE jobs SET status = 'cancelled', fail_reason = ?, updated_at = ? WHERE id = ?").run(reason, now, id);

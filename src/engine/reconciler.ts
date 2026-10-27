@@ -25,9 +25,10 @@ async function reconcileAutomation(
   token: string,
 ): Promise<{ queued: number; complete: boolean }> {
   const now = deps.now();
+  // activatedAt: após pausar e reativar, a varredura começa na reativação (não responde o que chegou na pausa).
   const since = Math.max(
-    automation.createdAt,
-    (automation.lastReconciledAt ?? automation.createdAt) - RECONCILE_OVERLAP_MS,
+    automation.activatedAt,
+    (automation.lastReconciledAt ?? automation.activatedAt) - RECONCILE_OVERLAP_MS,
     now - COMMENT_WINDOW_MS,
   );
   let queued = 0;

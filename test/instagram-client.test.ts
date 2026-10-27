@@ -51,6 +51,21 @@ describe('createInstagramClient', () => {
     expect(requests[0]!.url.searchParams.get('after')).toBe('PREV');
   });
 
+  it('isCommentHidden consulta GET /{comment_id}?fields=hidden com Bearer', async () => {
+    const { client, requests } = build([{ json: { id: 'C1', hidden: true } }, { json: { id: 'C2' } }]);
+    await expect(client.isCommentHidden('T', 'C1')).resolves.toBe(true);
+    await expect(client.isCommentHidden('T', 'C2')).resolves.toBe(false);
+    expect(requests[0]!.method).toBe('GET');
+    expect(requests[0]!.url.pathname).toBe('/v26.0/C1');
+    expect(requests[0]!.url.searchParams.get('fields')).toBe('hidden');
+    expect(requests[0]!.headers.authorization).toBe('Bearer T');
+  });
+
+  it('isCommentHidden converte erro da API em GraphApiError', async () => {
+    const { client } = build([{ status: 400, json: { error: { message: 'Unsupported get request', code: 100 } } }]);
+    await expect(client.isCommentHidden('T', 'C1')).rejects.toMatchObject({ code: 100, httpStatus: 400 });
+  });
+
   it('subscribeToComments assina apenas o campo comments', async () => {
     const { client, requests } = build([{ json: { success: true } }]);
     await client.subscribeToComments('T');

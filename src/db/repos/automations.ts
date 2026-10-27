@@ -19,6 +19,8 @@ export interface Automation extends NewAutomation {
   isActive: boolean;
   lastVariationIndex: number | null;
   lastReconciledAt: number | null;
+  /** Último momento em que a automação foi ligada (criação ou reativação): nada comentado antes disso é respondido. */
+  activatedAt: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -42,6 +44,7 @@ interface Row {
   is_active: number;
   last_variation_index: number | null;
   last_reconciled_at: number | null;
+  activated_at: number;
   created_at: number;
   updated_at: number;
 }
@@ -59,6 +62,7 @@ const toAutomation = (r: Row): Automation => ({
   isActive: r.is_active === 1,
   lastVariationIndex: r.last_variation_index,
   lastReconciledAt: r.last_reconciled_at,
+  activatedAt: r.activated_at,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -74,8 +78,8 @@ export function createAutomation(db: DB, input: NewAutomation, now: number): Aut
     const result = db
       .prepare(
         `INSERT INTO automations (account_id, media_id, media_type, media_permalink, media_caption, keywords_json,
-           public_variations_json, dm_text, is_active, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+           public_variations_json, dm_text, is_active, activated_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
       )
       .run(
         input.accountId,
@@ -86,6 +90,7 @@ export function createAutomation(db: DB, input: NewAutomation, now: number): Aut
         JSON.stringify(input.keywords),
         JSON.stringify(input.publicVariations),
         input.dmText,
+        now,
         now,
         now,
       );
@@ -102,8 +107,14 @@ export function updateAutomationContent(db: DB, id: number, content: AutomationC
   ).run(JSON.stringify(content.keywords), JSON.stringify(content.publicVariations), content.dmText, now, id);
 }
 
+/**
+ * Liga/desliga a automação. Ao ligar uma automação pausada, `activated_at` passa a ser `now`: comentários feitos
+ * durante a pausa não são respondidos depois (spec §6.2). Ligar uma automação já ativa não move o marco.
+ */
 export function setAutomationActive(db: DB, id: number, active: boolean, now: number): void {
-  db.prepare('UPDATE automations SET is_active = ?, updated_at = ? WHERE id = ?').run(active ? 1 : 0, now, id);
+  db.prepare(
+    'UPDATE automations SET activated_at = CASE WHEN ? = 1 AND is_active = 0 THEN ? ELSE activated_at END, is_active = ?, updated_at = ? WHERE id = ?',
+  ).run(active ? 1 : 0, now, active ? 1 : 0, now, id);
 }
 
 export function deleteAutomation(db: DB, id: number): void {

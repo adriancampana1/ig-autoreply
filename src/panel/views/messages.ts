@@ -13,6 +13,7 @@ export const FAIL_REASON_TEXT: Record<string, string> = {
   temporary_error: 'Instabilidade no Instagram: não foi possível enviar',
   unknown_error: 'Erro inesperado do Instagram',
   account_disconnected: 'A conta foi desconectada antes do envio',
+  comment_hidden: 'O comentário foi ocultado — nada foi enviado',
 };
 
 export const SKIP_REASON_TEXT: Record<string, string> = {

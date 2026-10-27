@@ -39,6 +39,7 @@ export const migrations: readonly string[] = [
     is_active INTEGER NOT NULL DEFAULT 1,
     last_variation_index INTEGER,
     last_reconciled_at INTEGER,
+    activated_at INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     UNIQUE (account_id, media_id)

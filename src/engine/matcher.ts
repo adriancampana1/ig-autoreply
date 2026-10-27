@@ -46,12 +46,18 @@ export function handleComment(deps: MatcherDeps, comment: IncomingComment): Matc
 
   const account = getAccountByIgId(db, comment.accountIgId);
   if (!account || account.status === 'disconnected') return { kind: 'ignored', reason: 'unknown_account' };
-  if (comment.isSelf || comment.fromId === account.igId) return { kind: 'ignored', reason: 'self_comment' };
+  // No reconciler o from.id pode vir escopado (≠ igId): o @ da própria conta também identifica as nossas respostas.
+  const isSelf =
+    comment.isSelf ||
+    comment.fromId === account.igId ||
+    comment.fromUsername?.toLowerCase() === account.username.toLowerCase();
+  if (isSelf) return { kind: 'ignored', reason: 'self_comment' };
 
   const automation = findActiveAutomation(db, account.id, comment.mediaId);
   if (!automation) return { kind: 'ignored', reason: 'no_automation' };
   if (comment.createdAt !== undefined) {
-    if (comment.createdAt < automation.createdAt) return { kind: 'ignored', reason: 'before_automation' };
+    // activatedAt (não createdAt): comentários feitos enquanto a automação estava pausada não são respondidos.
+    if (comment.createdAt < automation.activatedAt) return { kind: 'ignored', reason: 'before_automation' };
     if (now - comment.createdAt > COMMENT_WINDOW_MS) return { kind: 'ignored', reason: 'too_old' };
   }
 
