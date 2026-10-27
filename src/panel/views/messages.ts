@@ -4,13 +4,13 @@ import type { Tone } from './components.js';
 /** Textos em português simples para a usuária (sem jargão técnico). */
 export const FAIL_REASON_TEXT: Record<string, string> = {
   token_invalid: 'A conta precisa ser reconectada',
-  rate_limited: 'Limite do Instagram atingido — tentando de novo mais tarde',
+  rate_limited: 'Limite do Instagram atingido; vamos tentar de novo mais tarde',
   messaging_disabled: 'A conta está com "Permitir acesso a mensagens" desativado',
-  abuse_blocked: 'O Instagram pediu uma pausa — automações pausadas por 24h',
+  abuse_blocked: 'O Instagram pediu uma pausa: automações pausadas por 24h',
   comment_unavailable: 'Comentário apagado ou indisponível',
   window_expired: 'Passou do prazo de 7 dias ou a pessoa já recebeu a mensagem',
   permission_denied: 'O Instagram não permitiu esta ação',
-  temporary_error: 'Instabilidade no Instagram — não foi possível enviar',
+  temporary_error: 'Instabilidade no Instagram: não foi possível enviar',
   unknown_error: 'Erro inesperado do Instagram',
   account_disconnected: 'A conta foi desconectada antes do envio',
 };

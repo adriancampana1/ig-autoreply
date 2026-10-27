@@ -11,8 +11,8 @@ export const OAUTH_CALLBACK_PATH = '/auth/instagram/callback';
 
 // Mostrado quando a miniatura não pode ser carregada (sem <img onerror>, que a CSP bloqueia).
 const PLACEHOLDER_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><rect width="96" height="96" fill="#e4e4e7"/>' +
-  '<path d="M30 62l12-14 9 10 7-8 8 12z" fill="#a1a1aa"/><circle cx="38" cy="36" r="5" fill="#a1a1aa"/></svg>';
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><rect width="96" height="96" fill="#857c88" fill-opacity=".12"/>' +
+  '<path d="M30 62l12-14 9 10 7-8 8 12z" fill="#857c88" fill-opacity=".55"/><circle cx="38" cy="36" r="5" fill="#857c88" fill-opacity=".55"/></svg>';
 
 export async function registerAccountRoutes(app: FastifyInstance, ctx: PanelContext): Promise<void> {
   app.get('/contas', async (request, reply) =>
