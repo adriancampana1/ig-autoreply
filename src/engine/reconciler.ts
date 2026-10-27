@@ -4,7 +4,7 @@ import { listActiveAutomations, setLastReconciledAt, type Automation } from '../
 import type { InstagramClient } from '../instagram/client.js';
 import { classifyError } from '../instagram/errors.js';
 import { handleComment } from './matcher.js';
-import { COMMENT_WINDOW_MS } from './pacing.js';
+import { COMMENT_WINDOW_MS, SAFETY_PAUSE_MS } from './pacing.js';
 
 export const RECONCILE_OVERLAP_MS = 15 * 60_000;
 export const RECONCILE_MAX_PAGES = 40;
@@ -96,6 +96,11 @@ export async function reconcileOnce(deps: ReconcilerDeps): Promise<{ checked: nu
       const c = classifyError(error);
       deps.log.warn({ automationId: automation.id, kind: c.kind, code: c.code, message: c.message }, 'falha na reconciliação');
       if (c.kind === 'auth') setAccountStatus(deps.db, account.id, 'reconnect_required', deps.now(), { lastError: c.message });
+      if (c.kind === 'abuse') {
+        // Mesmo disjuntor do worker (spec §9): pausa a conta por 24h.
+        const at = deps.now();
+        setAccountStatus(deps.db, account.id, 'paused_by_safety', at, { lastError: c.message, pausedUntil: at + SAFETY_PAUSE_MS });
+      }
       if (c.kind === 'rate_limit' || c.kind === 'abuse') {
         throttledAccounts.add(account.id);
         deps.log.warn({ accountId: account.id, kind: c.kind }, 'reconciliação da conta suspensa nesta rodada');

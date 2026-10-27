@@ -38,7 +38,7 @@ export async function registerAccountRoutes(app: FastifyInstance, ctx: PanelCont
       return reply.redirect('/contas');
     }
     try {
-      const account = await completeConnection(ctx, query.code);
+      const account = await completeConnection({ ...ctx, log: request.log }, query.code);
       setFlash(request, { kind: 'success', message: `Conta @${account.username} conectada!` });
     } catch (error) {
       request.log.warn({ err: error }, 'falha ao conectar conta');

@@ -40,6 +40,13 @@ describe('createInstagramOAuth', () => {
     });
   });
 
+  it('resposta sem permissions devolve permissions indefinido (não lista vazia)', async () => {
+    const fake = createFakeFetch([{ json: { access_token: 'S', user_id: '1' } }]);
+    const result = await createInstagramOAuth({ ...opts, fetch: fake.fetch }).exchangeCode('X');
+    expect(result).toEqual({ accessToken: 'S' });
+    expect(result.permissions).toBeUndefined();
+  });
+
   it('troca por token longo e renova', async () => {
     const fake = createFakeFetch([
       { json: { access_token: 'LONG', token_type: 'bearer', expires_in: 5183944 } },

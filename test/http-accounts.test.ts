@@ -40,6 +40,16 @@ describe('contas', () => {
     expect(state).toBeTruthy();
   });
 
+  it('sem permissions na troca do code, pula a checagem de escopos e conecta', async () => {
+    const t = await buildTestApp({ oauth: { exchangeCode: async () => ({ accessToken: 'S' }) } });
+    t.client.getProfile.mockResolvedValue({ igId: 'IG9', appUserId: 'APP9', username: 'loja', accountType: 'Business' });
+    const { cookie, state } = await startConnect(t);
+    const res = await t.app.inject({ url: `/auth/instagram/callback?code=abc&state=${state}`, headers: { cookie } });
+    const page = await t.app.inject({ url: '/contas', headers: { cookie: cookieFrom(res) || cookie } });
+    expect(page.body).toContain('Conta @loja conectada!');
+    expect(getAccountByIgId(t.db, 'IG9')).toBeDefined();
+  });
+
   it('recusa conta que não está na allowlist (exceto em REVIEW_MODE)', async () => {
     const t = await buildTestApp();
     t.client.getProfile.mockResolvedValue({ igId: 'IGX', appUserId: 'APPX', username: 'estranha', accountType: 'Business' });
@@ -82,6 +92,33 @@ describe('contas', () => {
     const blocked = await t.app.inject({ url: `/midia/${account.id}/222`, headers: { cookie: session.cookie } });
     expect(blocked.headers['content-type']).toContain('image/svg+xml'); // placeholder, sem buscar o host desconhecido
     expect(images).toEqual(['https://scontent.cdninstagram.com/a.jpg']);
+  });
+
+  it('miniatura: aceita só jpeg/png/webp/gif do CDN (SVG ou outro tipo vira placeholder)', async () => {
+    const types: Record<string, string> = {
+      '401': 'image/svg+xml', '402': 'text/html', '403': 'image/png', '404': 'image/webp', '405': 'image/gif', '406': 'image/jpeg; charset=binary',
+    };
+    const evil = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>';
+    const fetchImage = (async (url: string | URL | Request) => {
+      const id = String(url).match(/(\d+)\.img$/)![1]!;
+      return new Response(id === '401' ? evil : new Uint8Array([1, 2, 3]), { headers: { 'content-type': types[id]! } });
+    }) as typeof fetch;
+    const t = await buildTestApp({ fetchImage });
+    const account = seedAccount(t.db, { tokenEnc: '' });
+    t.db.prepare('UPDATE ig_accounts SET token_enc = ? WHERE id = ?').run(t.cipher.encrypt('TOKEN'), account.id);
+    const session = await login(t.app, t.db);
+    const get = async (id: string) => {
+      t.client.getMedia.mockResolvedValueOnce({ id, mediaType: 'IMAGE', permalink: 'p', timestamp: 't', mediaUrl: `https://scontent.cdninstagram.com/${id}.img` });
+      return t.app.inject({ url: `/midia/${account.id}/${id}`, headers: { cookie: session.cookie } });
+    };
+    const svg = await get('401');
+    expect(svg.body).not.toContain('<script>');
+    expect(svg.body).toContain('M30 62'); // placeholder
+    expect((await get('402')).headers['content-type']).toContain('image/svg+xml');
+    expect((await get('403')).headers['content-type']).toBe('image/png');
+    expect((await get('404')).headers['content-type']).toBe('image/webp');
+    expect((await get('405')).headers['content-type']).toBe('image/gif');
+    expect((await get('406')).headers['content-type']).toBe('image/jpeg');
   });
 
   it('state errado ou ausente nunca troca o code por token', async () => {

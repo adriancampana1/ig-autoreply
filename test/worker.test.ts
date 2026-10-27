@@ -201,6 +201,87 @@ describe('runWorkerTick', () => {
     expect(t.client.replyToComment).toHaveBeenCalledTimes(2);
   });
 
+  it('resposta pública reagendada (ritmo) empurra a DM da mesma interação para depois dela', async () => {
+    const t = setup();
+    t.comment('C0', 'U0');
+    t.comment('C1', 'U1');
+    t.advance(15_000);
+    // C0 já foi atendido há 1 s: o espaçamento de 8 s adia a resposta pública de C1
+    t.db.prepare("UPDATE jobs SET status = 'done', last_attempt_at = ? WHERE interaction_id = 1").run(t.getNow() - 1_000);
+    const job = claimNextDueJob(t.db, t.getNow())!;
+    expect(job.type).toBe('public_reply');
+    expect(await processJob(t.deps, job)).toBe('rescheduled');
+    const [pub, dm] = t.jobRows().slice(2);
+    expect(pub!.runAt).toBe(t.getNow() + 7_000);
+    expect(dm!.runAt).toBeGreaterThanOrEqual(pub!.runAt + 3_000);
+    expect(dm!.runAt).toBeLessThanOrEqual(pub!.runAt + 10_000);
+  });
+
+  it('DM não sai enquanto a resposta pública da interação ainda está na fila', async () => {
+    const t = setup();
+    t.comment('C1');
+    t.db.prepare("UPDATE jobs SET run_at = ? WHERE type = 'public_reply'").run(T0 + 60_000);
+    t.advance(18_000);
+    expect(await runWorkerTick(t.deps)).toBe(1);
+    expect(t.client.sendPrivateReply).not.toHaveBeenCalled();
+    expect(t.jobRows()[1]).toMatchObject({ status: 'pending', attempts: 0, runAt: T0 + 63_000 });
+    expect(lastActionAt(t.db, t.account.id)).toBeNull();
+    t.advance(60_000);
+    await runWorkerTick(t.deps);
+    t.advance(10_000);
+    await runWorkerTick(t.deps);
+    expect(t.client.replyToComment.mock.invocationCallOrder[0]!).toBeLessThan(t.client.sendPrivateReply.mock.invocationCallOrder[0]!);
+  });
+
+  it('com vários comentários simultâneos, a DM nunca sai antes da resposta pública', async () => {
+    let seed = 42;
+    const random = () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let x = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
+      return ((x ^ (x >>> 14)) >>> 0) / 4_294_967_296;
+    };
+    let inversions = 0;
+    for (let round = 0; round < 20; round += 1) {
+      const t = setup();
+      const replied = new Set<string>();
+      t.client.replyToComment.mockImplementation(async (_t, commentId) => { replied.add(commentId); return { id: 'R' }; });
+      t.client.sendPrivateReply.mockImplementation(async (_t, _ig, commentId) => {
+        if (!replied.has(commentId)) inversions += 1;
+        return { messageId: 'M' };
+      });
+      const deps = { ...t.deps, random };
+      for (let i = 0; i < 5; i += 1) {
+        handleComment({ db: t.db, now: t.getNow, random }, {
+          accountIgId: 'IG1', commentId: `C${i}`, fromId: `U${i}`, isSelf: false, text: 'eu quero', mediaId: 'M1', source: 'webhook',
+        });
+      }
+      for (let s = 0; s < 300; s += 1) {
+        t.advance(1_000);
+        await runWorkerTick(deps);
+      }
+      expect(t.client.sendPrivateReply).toHaveBeenCalledTimes(5);
+    }
+    expect(inversions).toBe(0);
+  });
+
+  it('com o sinal de parada, termina o job atual e não pega o próximo', async () => {
+    const stop = new AbortController();
+    const t = setup({
+      replyToComment: async () => {
+        stop.abort();
+        return { id: 'R' };
+      },
+    });
+    t.comment('C1', 'U1');
+    t.comment('C2', 'U2');
+    t.advance(15_000);
+    expect(await runWorkerTick(t.deps, 10, stop.signal)).toBe(1);
+    expect(t.client.replyToComment).toHaveBeenCalledTimes(1);
+    expect(t.jobRows().map((j) => j.status)).toEqual(['done', 'pending', 'pending', 'pending']);
+    expect(await runWorkerTick(t.deps, 10, stop.signal)).toBe(0);
+  });
+
   it('conta desconectada: cancela o job sem chamar a API', async () => {
     const t = setup();
     t.comment('C1');

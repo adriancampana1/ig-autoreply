@@ -1,4 +1,5 @@
 import type { Flash } from '../../http/session.js';
+import { assetUrl } from '../../http/assets.js';
 import { html, type SafeHtml } from '../../lib/html.js';
 import { alertBox, buttonClass, csrfInput, FOCUS_RING, icon, type IconName } from './components.js';
 
@@ -46,9 +47,9 @@ export function layout(props: LayoutProps): string {
   <meta name="htmx-config" content='{"includeIndicatorStyles": false}'>
   <title>${props.title} · Respostas automáticas</title>
   <link rel="preload" href="/assets/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/assets/app.css">
-  <script src="/assets/htmx.min.js" defer></script>
-  <script src="/assets/app.js" defer></script>
+  <link rel="stylesheet" href="${assetUrl('app.css')}">
+  <script src="${assetUrl('htmx.min.js')}" defer></script>
+  <script src="${assetUrl('app.js')}" defer></script>
 </head>
 <body class="min-h-dvh bg-background font-sans text-foreground antialiased" hx-headers='{"x-csrf-token": "${props.csrf}"}'>
   ${props.nav

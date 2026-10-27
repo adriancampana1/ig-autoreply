@@ -16,7 +16,8 @@ export interface OAuthOptions {
 
 export interface ShortLivedToken {
   accessToken: string;
-  permissions: string[];
+  /** Ausente quando a Meta não informa as permissões na resposta (a checagem de escopos é pulada). */
+  permissions?: string[];
 }
 
 export interface LongLivedToken {
@@ -31,7 +32,8 @@ export interface InstagramOAuth {
   refresh(longToken: string): Promise<LongLivedToken>;
 }
 
-function toPermissions(value: unknown): string[] {
+function toPermissions(value: unknown): string[] | undefined {
+  if (value === undefined || value === null) return undefined;
   if (Array.isArray(value)) return value.map(String);
   if (typeof value === 'string') return value.split(',').map((item) => item.trim()).filter(Boolean);
   return [];
@@ -78,7 +80,8 @@ export function createInstagramOAuth(options: OAuthOptions): InstagramOAuth {
       >(response);
       const entry = raw.data?.[0] ?? raw;
       if (!entry.access_token) throw new GraphApiError('Resposta da Meta sem access_token', response.status);
-      return { accessToken: entry.access_token, permissions: toPermissions(entry.permissions) };
+      const permissions = toPermissions(entry.permissions);
+      return permissions ? { accessToken: entry.access_token, permissions } : { accessToken: entry.access_token };
     },
 
     async exchangeForLongLived(shortToken) {

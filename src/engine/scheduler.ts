@@ -1,7 +1,8 @@
 export interface ScheduledTask {
   name: string;
   intervalMs: number;
-  run: () => Promise<unknown> | unknown;
+  /** `signal` é abortado por stop(): tarefas longas devem parar de pegar trabalho novo. */
+  run: (signal: AbortSignal) => Promise<unknown> | unknown;
   /** Executa logo ao iniciar, além de a cada intervalo. */
   runOnStart?: boolean;
 }
@@ -17,12 +18,13 @@ export function startScheduler(
 ): { stop: () => Promise<void> } {
   const running = new Map<string, Promise<void>>();
   const timers: NodeJS.Timeout[] = [];
+  const stopping = new AbortController();
 
   const trigger = (task: ScheduledTask) => {
-    if (running.has(task.name)) return;
+    if (running.has(task.name) || stopping.signal.aborted) return;
     // Promise.resolve().then(): a tarefa só começa depois do `set`, mesmo se lançar erro de forma síncrona.
     const execution = Promise.resolve()
-      .then(task.run)
+      .then(() => task.run(stopping.signal))
       .then(
         () => undefined,
         (error: unknown) => log.error({ task: task.name, err: error }, 'tarefa agendada falhou'),
@@ -39,6 +41,7 @@ export function startScheduler(
   return {
     async stop() {
       timers.forEach(clearInterval);
+      stopping.abort();
       await Promise.all(running.values());
     },
   };

@@ -3,6 +3,8 @@ import type { FetchFn, InstagramClient, MediaItem } from '../instagram/client.js
 const ALLOWED_HOSTS = [/\.cdninstagram\.com$/, /\.fbcdn\.net$/];
 const URL_TTL_MS = 60 * 60_000;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+/** Só formatos raster: SVG pode conter script e nunca é repassado. */
+const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 /**
  * Busca a miniatura de um post no servidor e a devolve ao navegador, evitando bloqueios de
@@ -35,8 +37,8 @@ export function createThumbnailService(deps: { client: InstagramClient; fetch?: 
       if (target.protocol !== 'https:' || !ALLOWED_HOSTS.some((pattern) => pattern.test(target.hostname))) return null;
       // redirect: 'error' — um redirecionamento poderia levar a um host fora da lista.
       const response = await doFetch(cached.url, { signal: AbortSignal.timeout(10_000), redirect: 'error' });
-      const contentType = response.headers.get('content-type') ?? '';
-      if (!response.ok || !contentType.startsWith('image/') || Number(response.headers.get('content-length') ?? 0) > MAX_IMAGE_BYTES) {
+      const contentType = (response.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+      if (!response.ok || !ALLOWED_TYPES.has(contentType) || Number(response.headers.get('content-length') ?? 0) > MAX_IMAGE_BYTES) {
         urls.delete(mediaId);
         return null;
       }

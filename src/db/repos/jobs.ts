@@ -110,6 +110,20 @@ export function failPendingJobsOfInteraction(db: DB, interactionId: number, reas
   ).run(reason, now, interactionId);
 }
 
+/** Situação da resposta pública de uma interação (a DM só pode sair depois dela). */
+export function getPublicReplyOf(db: DB, interactionId: number): { status: string; runAt: number } | undefined {
+  return db
+    .prepare("SELECT status, run_at AS runAt FROM jobs WHERE interaction_id = ? AND type = 'public_reply'")
+    .get(interactionId) as { status: string; runAt: number } | undefined;
+}
+
+/** Garante que a DM pendente da interação não rode antes de `runAt`. */
+export function delayPrivateReplyUntil(db: DB, interactionId: number, runAt: number, now: number): void {
+  db.prepare(
+    "UPDATE jobs SET run_at = MAX(run_at, ?), updated_at = ? WHERE interaction_id = ? AND type = 'private_reply' AND status = 'pending'",
+  ).run(runAt, now, interactionId);
+}
+
 /** Cancela um job (ex.: conta desconectada) registrando o motivo. */
 export function cancelJob(db: DB, id: number, reason: string, now: number): void {
   db.prepare("UPDATE jobs SET status = 'cancelled', fail_reason = ?, updated_at = ? WHERE id = ?").run(reason, now, id);

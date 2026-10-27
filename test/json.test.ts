@@ -7,6 +7,11 @@ describe('quoteLargeIds', () => {
     expect(parsed).toEqual({ id: '17841405793187219', user_id: '17841405793187221', n: 1 });
   });
 
+  it('também protege comment_id e parent_id', () => {
+    const parsed = JSON.parse(quoteLargeIds('{"comment_id":17841405793187219,"parent_id":17841405793187223}'));
+    expect(parsed).toEqual({ comment_id: '17841405793187219', parent_id: '17841405793187223' });
+  });
+
   it('não altera ids que já são string nem outros campos numéricos', () => {
     const text = '{"id":"123","count":99999999999999999999}';
     expect(quoteLargeIds(text)).toBe(text);

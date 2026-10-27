@@ -8,8 +8,10 @@ import {
   completeJob,
   countActionsSince,
   deferPendingJobsOfAccount,
+  delayPrivateReplyUntil,
   failJob,
   failPendingJobsOfInteraction,
+  getPublicReplyOf,
   lastActionAt,
   rescheduleJob,
   type ClaimedJob,
@@ -17,7 +19,14 @@ import {
 import type { InstagramClient } from '../instagram/client.js';
 import { classifyError } from '../instagram/errors.js';
 import { pickVariationIndex, renderReply } from '../lib/text.js';
-import { nextAllowedAt, RECONNECT_RETRY_MS, SAFETY_PAUSE_MS, transientBackoff } from './pacing.js';
+import {
+  nextAllowedAt,
+  PRIVATE_REPLY_EXTRA_DELAY_MS,
+  randomBetween,
+  RECONNECT_RETRY_MS,
+  SAFETY_PAUSE_MS,
+  transientBackoff,
+} from './pacing.js';
 
 export interface WorkerDeps {
   db: DB;
@@ -51,6 +60,23 @@ async function execute(deps: WorkerDeps, job: ClaimedJob, account: Account): Pro
   return messageId;
 }
 
+/**
+ * Devolve o job para a fila. Se for a resposta pública, a DM da mesma interação vai junto para depois dela
+ * (3–10 s), para a pessoa nunca receber a DM antes de ver a resposta no comentário.
+ */
+function reschedule(
+  deps: WorkerDeps,
+  job: ClaimedJob,
+  runAt: number,
+  now: number,
+  opts: Parameters<typeof rescheduleJob>[4],
+): void {
+  rescheduleJob(deps.db, job.id, runAt, now, opts);
+  if (job.type === 'public_reply') {
+    delayPrivateReplyUntil(deps.db, job.interactionId, runAt + randomBetween(PRIVATE_REPLY_EXTRA_DELAY_MS, deps.random), now);
+  }
+}
+
 /** Executa um job já reivindicado e aplica a política de erros da spec §9. */
 export async function processJob(deps: WorkerDeps, job: ClaimedJob): Promise<JobOutcome> {
   const { db } = deps;
@@ -62,8 +88,17 @@ export async function processJob(deps: WorkerDeps, job: ClaimedJob): Promise<Job
     return 'failed';
   }
   if (!account.tokenEnc) {
-    rescheduleJob(db, job.id, now + RECONNECT_RETRY_MS, now, { countAttempt: false, reason: 'token_invalid' });
+    reschedule(deps, job, now + RECONNECT_RETRY_MS, now, { countAttempt: false, reason: 'token_invalid' });
     return 'rescheduled';
+  }
+
+  if (job.type === 'private_reply') {
+    const publicReply = getPublicReplyOf(db, job.interactionId);
+    if (publicReply && (publicReply.status === 'pending' || publicReply.status === 'running')) {
+      const runAt = Math.max(publicReply.runAt, now) + randomBetween(PRIVATE_REPLY_EXTRA_DELAY_MS, deps.random);
+      rescheduleJob(db, job.id, runAt, now, { countAttempt: false });
+      return 'rescheduled';
+    }
   }
 
   const allowedAt = nextAllowedAt({
@@ -73,7 +108,7 @@ export async function processJob(deps: WorkerDeps, job: ClaimedJob): Promise<Job
     maxPerHour: deps.maxActionsPerHour,
   });
   if (allowedAt > now) {
-    rescheduleJob(db, job.id, allowedAt + Math.floor(deps.random() * 2_000), now, { countAttempt: false });
+    reschedule(deps, job, allowedAt + Math.floor(deps.random() * 2_000), now, { countAttempt: false });
     return 'rescheduled';
   }
 
@@ -103,18 +138,18 @@ export async function processJob(deps: WorkerDeps, job: ClaimedJob): Promise<Job
     switch (c.kind) {
       case 'auth':
         setAccountStatus(db, account.id, 'reconnect_required', at, { lastError: c.message });
-        rescheduleJob(db, job.id, at, at, { countAttempt: false, recordAttempt: true, ...details });
+        reschedule(deps, job, at, at, { countAttempt: false, recordAttempt: true, ...details });
         return 'rescheduled';
       case 'rate_limit': {
         const retryAt = at + (c.retryAfterMs ?? 15 * 60_000);
-        rescheduleJob(db, job.id, retryAt, at, { countAttempt: false, recordAttempt: true, ...details });
+        reschedule(deps, job, retryAt, at, { countAttempt: false, recordAttempt: true, ...details });
         deferPendingJobsOfAccount(db, account.id, retryAt, at);
         return 'rescheduled';
       }
       case 'abuse': {
         const pausedUntil = at + SAFETY_PAUSE_MS;
         setAccountStatus(db, account.id, 'paused_by_safety', at, { lastError: c.message, pausedUntil });
-        rescheduleJob(db, job.id, pausedUntil, at, { countAttempt: false, recordAttempt: true, ...details });
+        reschedule(deps, job, pausedUntil, at, { countAttempt: false, recordAttempt: true, ...details });
         return 'rescheduled';
       }
       case 'messaging_disabled':
@@ -130,7 +165,7 @@ export async function processJob(deps: WorkerDeps, job: ClaimedJob): Promise<Job
           failJob(db, job.id, details, at);
           break;
         }
-        rescheduleJob(db, job.id, at + transientBackoff(attempts), at, { countAttempt: true, ...details });
+        reschedule(deps, job, at + transientBackoff(attempts), at, { countAttempt: true, ...details });
         return 'rescheduled';
       }
     }
@@ -139,10 +174,13 @@ export async function processJob(deps: WorkerDeps, job: ClaimedJob): Promise<Job
   }
 }
 
-/** Uma rodada do worker: processa em sequência até `maxJobs` jobs vencidos. */
-export async function runWorkerTick(deps: WorkerDeps, maxJobs = 10): Promise<number> {
+/**
+ * Uma rodada do worker: processa em sequência até `maxJobs` jobs vencidos. Com `signal` abortado (encerramento),
+ * termina o job em andamento e não pega o próximo.
+ */
+export async function runWorkerTick(deps: WorkerDeps, maxJobs = 10, signal?: AbortSignal): Promise<number> {
   let processed = 0;
-  while (processed < maxJobs) {
+  while (processed < maxJobs && !signal?.aborted) {
     const job = claimNextDueJob(deps.db, deps.now());
     if (!job) break;
     await processJob(deps, job);

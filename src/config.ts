@@ -57,3 +57,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   return config;
 }
+
+/** Configurações válidas, mas que provavelmente são engano: o servidor registra cada uma como aviso ao subir. */
+export function configWarnings(config: Config): string[] {
+  const warnings: string[] = [];
+  if (config.IG_ALLOWED_USERNAMES.length === 0 && !config.REVIEW_MODE) {
+    warnings.push('IG_ALLOWED_USERNAMES está vazio e REVIEW_MODE=false: nenhuma conta do Instagram conseguirá se conectar');
+  }
+  return warnings;
+}

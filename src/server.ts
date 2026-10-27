@@ -1,5 +1,5 @@
 import { buildApp } from './app.js';
-import { loadConfig } from './config.js';
+import { configWarnings, loadConfig } from './config.js';
 import { migrate, openDatabase } from './db/database.js';
 import { resetRunningJobs } from './db/repos/jobs.js';
 import { refreshExpiringTokens, runHousekeeping } from './engine/maintenance.js';
@@ -44,6 +44,7 @@ const app = await buildApp({
   },
 });
 const log = app.log;
+for (const warning of configWarnings(config)) log.warn(warning);
 
 resetRunningJobs(db, now());
 const decryptToken = (encoded: string) => cipher.decrypt(encoded);
@@ -52,8 +53,8 @@ const scheduler = startScheduler(
     {
       name: 'worker',
       intervalMs: 1_000,
-      run: async () => {
-        await runWorkerTick({ db, client, decryptToken, now, random, maxActionsPerHour: config.MAX_ACTIONS_PER_HOUR, log });
+      run: async (signal) => {
+        await runWorkerTick({ db, client, decryptToken, now, random, maxActionsPerHour: config.MAX_ACTIONS_PER_HOUR, log }, 10, signal);
         health.lastWorkerTickAt = now();
       },
       runOnStart: true,

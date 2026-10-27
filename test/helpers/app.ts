@@ -39,7 +39,14 @@ export function fakeOAuth(overrides: Partial<InstagramOAuth> = {}): InstagramOAu
   };
 }
 
-export async function buildTestApp(options: { config?: Record<string, string>; oauth?: Partial<InstagramOAuth>; fetchImage?: typeof fetch } = {}) {
+export async function buildTestApp(
+  options: {
+    config?: Record<string, string>;
+    oauth?: Partial<InstagramOAuth>;
+    fetchImage?: typeof fetch;
+    logger?: Parameters<typeof buildApp>[0]['logger'];
+  } = {},
+) {
   const db = makeDb();
   const client = createFakeInstagram();
   const config = testConfig(options.config);
@@ -55,6 +62,7 @@ export async function buildTestApp(options: { config?: Record<string, string>; o
     now: () => now.value,
     random: () => 0,
     fetchImage: options.fetchImage,
+    logger: options.logger,
   });
   return { app, db, client, cipher, config, now };
 }

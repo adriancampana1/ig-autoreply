@@ -12,6 +12,8 @@ import type { InstagramOAuth } from './instagram/oauth.js';
 import type { TokenCipher } from './lib/crypto.js';
 import { registerPanel } from './panel/register.js';
 import { registerPublicRoutes } from './public/routes.js';
+import { publicPage } from './public/views.js';
+import { html } from './lib/html.js';
 import { registerWebhookRoutes } from './webhooks/routes.js';
 
 export interface AppDeps {
@@ -72,6 +74,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     root: fileURLToPath(new URL('../public/assets', import.meta.url)),
     prefix: '/assets/',
     maxAge: '7d',
+  });
+
+  // 404 próprio: a resposta padrão do Fastify ecoa a URL (com a query, ex.: ?code=) no corpo e no log.
+  app.setNotFoundHandler((request, reply) => {
+    request.log.info({ method: request.method, path: request.url.split('?')[0] }, 'rota não encontrada');
+    reply.code(404);
+    if (request.headers.accept?.includes('text/html')) {
+      return reply
+        .type('text/html; charset=utf-8')
+        .send(publicPage('Página não encontrada', html`<h1>Página não encontrada</h1><p><a href="/automacoes" class="inline-flex min-h-11 items-center font-medium text-primary underline underline-offset-4">Voltar ao início</a></p>`));
+    }
+    return reply.send({ error: 'Not Found', statusCode: 404 });
   });
 
   await app.register(registerWebhookRoutes, deps);

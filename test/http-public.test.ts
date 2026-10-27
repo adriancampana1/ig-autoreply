@@ -2,6 +2,8 @@ import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { getAccountById } from '../src/db/repos/accounts.js';
 import { insertWebhookEvent } from '../src/db/repos/webhookEvents.js';
+import { ASSET_VERSION } from '../src/http/assets.js';
+import { serializeRequest } from '../src/http/logSerializers.js';
 import { buildTestApp, form } from './helpers/app.js';
 import { seedAccount, seedAutomation, T0 } from './helpers/db.js';
 
@@ -36,6 +38,37 @@ describe('rotas públicas', () => {
     expect(body).toContain('após 90 dias');
     expect(body).toContain('após 30 dias');
     expect(body).not.toContain('o que dispara a exclusão automática dos dados');
+  });
+
+  it('CSS/JS saem com ?v=<versão> (cache-busting) no painel e nas páginas públicas', async () => {
+    const { app } = await buildTestApp();
+    expect(ASSET_VERSION).toMatch(/^[0-9a-z.-]{6,}$/);
+    const privacy = (await app.inject({ url: '/privacidade' })).body;
+    expect(privacy).toContain(`href="/assets/app.css?v=${ASSET_VERSION}"`);
+    const login = (await app.inject({ url: '/entrar' })).body;
+    expect(login).toContain(`href="/assets/app.css?v=${ASSET_VERSION}"`);
+    expect(login).toContain(`src="/assets/htmx.min.js?v=${ASSET_VERSION}"`);
+    expect(login).toContain(`src="/assets/app.js?v=${ASSET_VERSION}"`);
+    expect((await app.inject({ url: `/assets/app.js?v=${ASSET_VERSION}` })).statusCode).toBe(200);
+  });
+
+  it('404 não ecoa a URL na resposta nem a query string no log', async () => {
+    const lines: string[] = [];
+    const stream = { write: (line: string) => { lines.push(line); } };
+    const { app } = await buildTestApp({ logger: { level: 'info', stream, serializers: { req: serializeRequest } } });
+    const json = await app.inject({ url: '/nao-existe?code=SEGREDO' });
+    expect(json.statusCode).toBe(404);
+    expect(json.body).not.toContain('nao-existe');
+    expect(json.body).not.toContain('SEGREDO');
+    expect(json.json()).toEqual({ error: 'Not Found', statusCode: 404 });
+    const page = await app.inject({ url: '/outra?code=SEGREDO', headers: { accept: 'text/html' } });
+    expect(page.statusCode).toBe(404);
+    expect(page.headers['content-type']).toContain('text/html');
+    expect(page.body).toContain('Página não encontrada');
+    expect(page.body).not.toContain('SEGREDO');
+    expect((await app.inject({ url: '/assets/nao-existe.js?code=SEGREDO' })).statusCode).toBe(404);
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.join('')).not.toContain('SEGREDO');
   });
 
   it('/meta/deauthorize desconecta a conta do signed_request válido', async () => {

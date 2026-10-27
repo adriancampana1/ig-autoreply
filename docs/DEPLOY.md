@@ -22,9 +22,13 @@ mkdir -p data && sudo chown 1000:1000 data   # o container roda como usuário "n
 ```
 
 O `.env` precisa ter todas as variáveis obrigatórias preenchidas: `IG_APP_ID`, `IG_APP_SECRET`, `META_APP_SECRET`,
-`WEBHOOK_VERIFY_TOKEN`, `ENCRYPTION_KEY` e `SESSION_SECRET` (além de `APP_BASE_URL` e `CONTACT_EMAIL`, já preenchidas no
-exemplo). Cada uma tem um comentário em `.env.example` dizendo onde obter o valor. Se faltar algo, o app recusa subir e
-o motivo aparece em `docker compose logs`.
+`WEBHOOK_VERIFY_TOKEN`, `ENCRYPTION_KEY`, `SESSION_SECRET` e `IG_ALLOWED_USERNAMES` (além de `APP_BASE_URL` e
+`CONTACT_EMAIL`, já preenchidas no exemplo). Cada uma tem um comentário em `.env.example` dizendo onde obter o valor. Se
+faltar algo, o app recusa subir e o motivo aparece em `docker compose logs` (exceção: `IG_ALLOWED_USERNAMES`, abaixo).
+
+`IG_ALLOWED_USERNAMES` é a lista, separada por vírgula e sem `@`, dos nomes de usuário do Instagram que
+podem ser conectados no painel (ex.: `IG_ALLOWED_USERNAMES=loja.um,loja_dois`). Vazio, **ninguém** consegue conectar uma
+conta (a menos que `REVIEW_MODE=true`, usado só durante o App Review); nesse caso o app sobe, mas registra um aviso no log.
 
 > Guarde uma cópia do `ENCRYPTION_KEY` num gerenciador de senhas: sem ele, os tokens salvos não podem ser lidos
 > (seria preciso reconectar as contas).

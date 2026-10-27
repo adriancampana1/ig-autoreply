@@ -40,4 +40,32 @@ describe('startScheduler', () => {
     expect(error).toHaveBeenCalledTimes(2);
     await scheduler.stop();
   });
+
+  it('stop() sinaliza a tarefa em andamento (AbortSignal) e espera ela terminar', async () => {
+    let seen: AbortSignal | undefined;
+    let release: () => void = () => undefined;
+    const scheduler = startScheduler(
+      [{
+        name: 'worker',
+        intervalMs: 60_000,
+        runOnStart: true,
+        run: (signal) => {
+          seen = signal;
+          return new Promise<void>((resolve) => { release = resolve; });
+        },
+      }],
+      { error: () => undefined },
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(seen?.aborted).toBe(false);
+    let stopped = false;
+    const stopping = scheduler.stop().then(() => { stopped = true; });
+    expect(seen?.aborted).toBe(true);
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+    release();
+    await stopping;
+    expect(stopped).toBe(true);
+  });
 });

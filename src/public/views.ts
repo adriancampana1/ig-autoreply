@@ -1,3 +1,4 @@
+import { assetUrl } from '../http/assets.js';
 import { html, type SafeHtml } from '../lib/html.js';
 
 export function publicPage(title: string, body: SafeHtml): string {
@@ -7,7 +8,7 @@ export function publicPage(title: string, body: SafeHtml): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${title}</title>
-  <link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="${assetUrl('app.css')}">
 </head>
 <body class="bg-background text-foreground antialiased">
   <main class="prose-sm mx-auto max-w-2xl space-y-4 px-4 py-10 [&_h1]:text-2xl [&_h1]:font-semibold [&_h2]:mt-6 [&_h2]:text-lg [&_h2]:font-semibold [&_li]:ml-5 [&_li]:list-disc">${body}</main>

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { getAccountById } from '../src/db/repos/accounts.js';
 import { getAutomation, setAutomationActive, setLastReconciledAt } from '../src/db/repos/automations.js';
+import { SAFETY_PAUSE_MS } from '../src/engine/pacing.js';
 import { RECONCILE_MAX_PAGES, reconcileOnce } from '../src/engine/reconciler.js';
 import { GraphApiError } from '../src/instagram/errors.js';
 import { makeDb, seedAccount, seedAutomation, T0 } from './helpers/db.js';
@@ -140,6 +141,31 @@ describe('reconcileOnce', () => {
     };
     expect(await reconcileOnce(deps)).toEqual({ checked: 0, queued: 0 });
     expect(listComments).toHaveBeenCalledTimes(1);
+  });
+
+  it('rate limit na varredura não pausa a conta', async () => {
+    const db = makeDb();
+    const account = seedAccount(db);
+    seedAutomation(db, account.id);
+    const deps = {
+      db, client: createFakeInstagram({ listComments: vi.fn(async () => { throw new GraphApiError('too many', 400, 4); }) }),
+      decryptToken: (e: string) => e, now: () => T0 + 1, random: () => 0, log: silentLog,
+    };
+    await reconcileOnce(deps);
     expect(getAccountById(db, account.id)!.status).toBe('ok');
+  });
+
+  it('sinal de abuso na varredura aciona o mesmo disjuntor de 24h do worker', async () => {
+    const db = makeDb();
+    const account = seedAccount(db);
+    seedAutomation(db, account.id);
+    const deps = {
+      db, client: createFakeInstagram({ listComments: vi.fn(async () => { throw new GraphApiError('blocked', 400, 368); }) }),
+      decryptToken: (e: string) => e, now: () => T0 + 1, random: () => 0, log: silentLog,
+    };
+    await reconcileOnce(deps);
+    expect(getAccountById(db, account.id)).toMatchObject({ status: 'paused_by_safety', pausedUntil: T0 + 1 + SAFETY_PAUSE_MS });
+    expect(await reconcileOnce({ ...deps, now: () => T0 + 60_000 })).toEqual({ checked: 0, queued: 0 });
+    expect(deps.client.listComments).toHaveBeenCalledTimes(1);
   });
 });

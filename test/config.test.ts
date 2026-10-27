@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadConfig } from '../src/config.js';
+import { configWarnings, loadConfig } from '../src/config.js';
 
 const KEY = Buffer.alloc(32, 7).toString('base64');
 
@@ -38,5 +38,13 @@ describe('loadConfig', () => {
   it('lança erro legível quando falta variável ou a chave tem tamanho errado', () => {
     expect(() => loadConfig({ ...baseEnv, IG_APP_ID: '' })).toThrow(/IG_APP_ID/);
     expect(() => loadConfig({ ...baseEnv, ENCRYPTION_KEY: 'curta' })).toThrow(/32 bytes/);
+  });
+});
+
+describe('configWarnings', () => {
+  it('avisa quando IG_ALLOWED_USERNAMES está vazio e REVIEW_MODE é false (ninguém conecta)', () => {
+    expect(configWarnings(loadConfig(baseEnv))).toEqual([expect.stringContaining('IG_ALLOWED_USERNAMES')]);
+    expect(configWarnings(loadConfig({ ...baseEnv, IG_ALLOWED_USERNAMES: 'loja' }))).toEqual([]);
+    expect(configWarnings(loadConfig({ ...baseEnv, REVIEW_MODE: 'true' }))).toEqual([]);
   });
 });
