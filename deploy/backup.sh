@@ -13,7 +13,7 @@ fi
 mkdir -p "$DEST"
 TMP="$(mktemp "$DEST/.app-tmp-XXXXXX")"
 trap 'rm -f "$TMP"' EXIT
-rm -f "$TMP" # o .backup exige destino novo; mktemp só reservou um nome único
+rm -f "$TMP" # mktemp cria o arquivo vazio só para reservar um nome único; o .backup cria o banco do zero
 sqlite3 -cmd '.timeout 5000' "$DB" ".backup '$TMP'"
 if [ "$(sqlite3 "$TMP" 'pragma integrity_check;')" != "ok" ]; then
   echo "$(date -Is) backup FALHOU: integrity_check reprovou a cópia" >&2

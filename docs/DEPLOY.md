@@ -80,7 +80,36 @@ docker compose exec ig-autoreply node dist/cli/users.js reset-password esposa@ex
 
 A senha é gerada e exibida **uma única vez**.
 
-## 6. Backup diário
+## 6. Configurar o app na Meta
+
+Faça isto depois do HTTPS (seção 4): a Meta só aceita URLs `https://` que respondam. No App Dashboard do app:
+
+1. **Business login settings** (*Instagram › API setup with Instagram login › Set up Instagram business login › Business login settings*):
+   - OAuth redirect URI: `https://dm.adriancampana.cloud/auth/instagram/callback` (confira se o painel não acrescentou
+     `/` no fim — precisa ser idêntico ao do código).
+   - Deauthorize callback URL: `https://dm.adriancampana.cloud/meta/deauthorize`
+   - Data deletion request URL: `https://dm.adriancampana.cloud/meta/data-deletion`
+   - Copie **Instagram app ID** e **Instagram app secret** para `IG_APP_ID`/`IG_APP_SECRET` no `.env`; *App settings ›
+     Basic › App secret* para `META_APP_SECRET`; em *Privacy Policy URL* use `https://dm.adriancampana.cloud/privacidade`.
+     Depois de editar o `.env`, rode `docker compose up -d --force-recreate` (o `restart` não relê o `.env`).
+2. **Webhooks** (*Configure webhooks*): Callback URL `https://dm.adriancampana.cloud/webhooks/instagram` e Verify token =
+   o valor de `WEBHOOK_VERIFY_TOKEN` › *Verify and save*. **Desassine todos os campos exceto `comments`** (o painel
+   assina vários por padrão; o app só usa `comments`).
+3. **Descobrir qual segredo assina os webhooks**: com `META_WEBHOOK_SECRETS` vazio o app aceita os dois segredos
+   (`META_APP_SECRET` e `IG_APP_SECRET`); deixe só o correto. Defina `META_WEBHOOK_SECRETS=<valor do META_APP_SECRET>`,
+   rode `docker compose up -d --force-recreate`, clique **Test** no campo `comments` e veja:
+
+   ```bash
+   docker compose logs --since 5m ig-autoreply | grep -E "assinatura inválida|webhooks/instagram"
+   ```
+
+   Se aparecer "webhook com assinatura inválida descartado", troque para o valor do `IG_APP_SECRET` e repita. Fica
+   valendo o segredo com o qual o teste passa sem esse aviso (resposta `200`).
+
+Depois disso, conecte as contas no painel (*Contas › Conectar conta do Instagram*, uma de cada vez) — só as que estão em
+`IG_ALLOWED_USERNAMES` (seção 2).
+
+## 7. Backup diário
 
 ```bash
 chmod +x deploy/backup.sh
@@ -109,7 +138,7 @@ sudo sh -c 'rm -f data/app.db-wal data/app.db-shm && cp data/backups/app-AAAA-MM
 docker compose up -d
 ```
 
-## 7. Atualizar
+## 8. Atualizar
 
 ```bash
 cd /opt/ig-autoreply && git pull && docker compose up -d --build
@@ -118,7 +147,7 @@ docker image prune -f   # remove as imagens antigas que sobram a cada build
 
 As migrações do banco rodam automaticamente na inicialização.
 
-## 8. Logs e diagnóstico
+## 9. Logs e diagnóstico
 
 ```bash
 docker compose logs -f --since 1h ig-autoreply
