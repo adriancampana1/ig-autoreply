@@ -38,3 +38,24 @@ describe('classifyError', () => {
     expect(classifyError(err(99999))).toMatchObject({ kind: 'transient', reason: 'unknown_error', maxAttempts: 2 });
   });
 });
+
+describe('classifyError: falhas que não são GraphApiError', () => {
+  it('timeout/abort e falhas de rede conhecidas → transient com 5 tentativas', () => {
+    expect(classifyError(Object.assign(new Error('aborted'), { name: 'AbortError' }))).toMatchObject({ kind: 'transient', maxAttempts: 5 });
+    expect(classifyError(Object.assign(new Error('timeout'), { name: 'TimeoutError' }))).toMatchObject({ kind: 'transient', maxAttempts: 5 });
+    expect(classifyError(new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } }))).toMatchObject({ kind: 'transient', maxAttempts: 5 });
+    expect(classifyError(new TypeError('fetch failed', { cause: { code: 'UND_ERR_SOCKET' } }))).toMatchObject({ kind: 'transient', maxAttempts: 5 });
+  });
+
+  it('outros erros não-Graph → unknown_error com 2 tentativas', () => {
+    expect(classifyError(new TypeError("Cannot read properties of undefined"))).toMatchObject({ kind: 'transient', reason: 'unknown_error', maxAttempts: 2 });
+    expect(classifyError(new Error('bug interno'))).toMatchObject({ kind: 'transient', reason: 'unknown_error', maxAttempts: 2 });
+    expect(classifyError('boom')).toMatchObject({ kind: 'transient', reason: 'unknown_error', maxAttempts: 2 });
+  });
+});
+
+describe('classifyError: bloqueio por abuso', () => {
+  it('"You have been blocked from ..." → abuse', () => {
+    expect(classifyError(err(undefined, 'You have been blocked from commenting on this media'))).toMatchObject({ kind: 'abuse' });
+  });
+});

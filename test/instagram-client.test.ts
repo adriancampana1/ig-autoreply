@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createInstagramClient } from '../src/instagram/client.js';
+import { createInstagramClient, readGraphResponse } from '../src/instagram/client.js';
 import { GraphApiError } from '../src/instagram/errors.js';
 import { createFakeFetch } from './helpers/fakeFetch.js';
 
@@ -69,5 +69,35 @@ describe('createInstagramClient', () => {
     const error = await client.replyToComment('T', 'C', 'm').catch((e: unknown) => e);
     expect(error).toBeInstanceOf(GraphApiError);
     expect(error).toMatchObject({ code: 80002, subcode: 2207051, httpStatus: 400, regainAccessMinutes: 12 });
+  });
+});
+
+describe('readGraphResponse: formatos e corpos malformados', () => {
+  it('IDs numéricos acima de 2^53 chegam como string exata (getProfile)', async () => {
+    const raw = '{"id":"999","user_id":17841405793187219,"username":"loja"}';
+    const client = createInstagramClient({ version: 'v26.0', fetch: (async () => new Response(raw, { status: 200 })) as typeof fetch });
+    await expect(client.getProfile('T')).resolves.toMatchObject({ igId: '17841405793187219', appUserId: '999' });
+  });
+
+  it('IDs numéricos grandes chegam como string exata (readGraphResponse)', async () => {
+    const body = await readGraphResponse<{ user_id: string; id: string }>(
+      new Response('{"id":17841405793187219,"user_id":17841405793187219}', { status: 200 }),
+    );
+    expect(body.user_id).toBe('17841405793187219');
+    expect(body.id).toBe('17841405793187219');
+  });
+
+  it('erro no formato do host OAuth ({error_type, code, error_message}) vira GraphApiError com mensagem e código', async () => {
+    const response = new Response(JSON.stringify({ error_type: 'OAuthException', code: 400, error_message: 'Invalid authorization code' }), { status: 400 });
+    const error = await readGraphResponse(response).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(GraphApiError);
+    expect(error).toMatchObject({ message: 'Invalid authorization code', code: 400, httpStatus: 400, errorType: 'OAuthException' });
+  });
+
+  it('2xx com corpo null, não-objeto ou não-JSON → GraphApiError (não TypeError)', async () => {
+    for (const text of ['null', '42', '[1,2]', 'not json']) {
+      const error = await readGraphResponse(new Response(text, { status: 200 })).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(GraphApiError);
+    }
   });
 });

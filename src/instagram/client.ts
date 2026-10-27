@@ -90,23 +90,61 @@ function regainMinutes(header: string | null): number | undefined {
   }
 }
 
+/** Meta pode mandar IDs como número JSON acima de 2^53, que o JSON.parse corromperia: vira string antes do parse. */
+function quoteLargeIds(text: string): string {
+  return text.replace(/"(id|user_id)"\s*:\s*(-?\d+)(?![\d.eE])/g, '"$1":"$2"');
+}
+
+interface ErrorBody {
+  message?: string;
+  code?: number;
+  error_subcode?: number;
+  type?: string;
+}
+
+/** Formatos: Graph API `{ error: { message, code, error_subcode, type } }` e host OAuth `{ error_type, code, error_message }`. */
+function extractError(body: Record<string, unknown>): ErrorBody | undefined {
+  const graph = body.error as ErrorBody | undefined;
+  if (graph) {
+    return { message: graph.message, code: graph.code, error_subcode: graph.error_subcode, type: graph.type };
+  }
+  if (body.error_message !== undefined || body.error_type !== undefined) {
+    return {
+      message: body.error_message as string | undefined,
+      code: body.code as number | undefined,
+      type: body.error_type as string | undefined,
+    };
+  }
+  return undefined;
+}
+
 export async function readGraphResponse<T>(response: Response): Promise<T> {
   const text = await response.text();
-  let body: unknown;
-  try {
-    body = text ? JSON.parse(text) : {};
-  } catch {
-    body = { error: { message: text.slice(0, 200) } };
+  let body: unknown = {};
+  let parsed = true;
+  if (text) {
+    try {
+      body = JSON.parse(quoteLargeIds(text));
+    } catch {
+      parsed = false;
+    }
   }
-  const error = (body as { error?: { message?: string; code?: number; error_subcode?: number } }).error;
-  if (!response.ok || error) {
+  const isObject = typeof body === 'object' && body !== null && !Array.isArray(body);
+  const err = isObject ? extractError(body as Record<string, unknown>) : undefined;
+
+  if (!response.ok || err) {
+    const message = err?.message ?? (parsed ? undefined : text.slice(0, 200)) ?? `HTTP ${response.status}`;
     throw new GraphApiError(
-      error?.message ?? `HTTP ${response.status}`,
+      message,
       response.status,
-      error?.code,
-      error?.error_subcode,
+      err?.code,
+      err?.error_subcode,
       regainMinutes(response.headers.get('x-business-use-case-usage')),
+      err?.type,
     );
+  }
+  if (!parsed || !isObject) {
+    throw new GraphApiError(`Resposta inesperada da Meta (HTTP ${response.status})`, response.status);
   }
   return body as T;
 }

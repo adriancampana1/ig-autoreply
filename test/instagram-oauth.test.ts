@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createInstagramOAuth, REQUIRED_SCOPES } from '../src/instagram/oauth.js';
+import { GraphApiError } from '../src/instagram/errors.js';
 import { createFakeFetch } from './helpers/fakeFetch.js';
 
 const opts = { appId: 'APP', appSecret: 'SECRET', redirectUri: 'https://dm.example.com/auth/instagram/callback' };
@@ -51,5 +52,42 @@ describe('createInstagramOAuth', () => {
     expect(fake.requests[0]!.url.searchParams.get('grant_type')).toBe('ig_exchange_token');
     expect(fake.requests[1]!.url.pathname).toBe('/refresh_access_token');
     expect(fake.requests[1]!.url.searchParams.get('grant_type')).toBe('ig_refresh_token');
+  });
+});
+
+describe('createInstagramOAuth: erros e respostas malformadas', () => {
+  it('exchangeCode com 400 no formato do host OAuth → GraphApiError com mensagem e código da Meta', async () => {
+    const fake = createFakeFetch([
+      { status: 400, json: { error_type: 'OAuthException', code: 400, error_message: 'Invalid authorization code' } },
+    ]);
+    const oauth = createInstagramOAuth({ ...opts, fetch: fake.fetch });
+    await expect(oauth.exchangeCode('BAD')).rejects.toMatchObject({
+      name: 'GraphApiError',
+      message: 'Invalid authorization code',
+      code: 400,
+      httpStatus: 400,
+    });
+  });
+
+  it('exchangeCode sem access_token → GraphApiError', async () => {
+    const fake = createFakeFetch([{ json: { user_id: '1' } }]);
+    const error = await createInstagramOAuth({ ...opts, fetch: fake.fetch }).exchangeCode('X').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(GraphApiError);
+  });
+
+  it('exchangeForLongLived e refresh sem access_token → GraphApiError', async () => {
+    const fake = createFakeFetch([{ json: { expires_in: 5 } }, { json: { expires_in: 5 } }]);
+    const oauth = createInstagramOAuth({ ...opts, fetch: fake.fetch });
+    await expect(oauth.exchangeForLongLived('S')).rejects.toBeInstanceOf(GraphApiError);
+    await expect(oauth.refresh('L')).rejects.toBeInstanceOf(GraphApiError);
+  });
+
+  it('user_id numérico acima de 2^53 na troca do code não quebra a resposta', async () => {
+    const fetchRaw = (async () =>
+      new Response('{"access_token":"SHORT","user_id":17841405793187219,"permissions":"instagram_business_basic"}', { status: 200 })) as typeof fetch;
+    await expect(createInstagramOAuth({ ...opts, fetch: fetchRaw }).exchangeCode('ABC')).resolves.toEqual({
+      accessToken: 'SHORT',
+      permissions: ['instagram_business_basic'],
+    });
   });
 });

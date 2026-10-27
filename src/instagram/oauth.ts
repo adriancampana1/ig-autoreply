@@ -1,3 +1,4 @@
+import { GraphApiError } from './errors.js';
 import { readGraphResponse, type FetchFn } from './client.js';
 
 export const REQUIRED_SCOPES = [
@@ -36,6 +37,12 @@ function toPermissions(value: unknown): string[] {
   return [];
 }
 
+/** Resposta de token sem access_token é malformada: erro de Graph API, não falha de rede. */
+function toLongLived(raw: { access_token?: string; expires_in: number }, status: number): LongLivedToken {
+  if (!raw.access_token) throw new GraphApiError('Resposta da Meta sem access_token', status);
+  return { accessToken: raw.access_token, expiresInSec: raw.expires_in };
+}
+
 export function createInstagramOAuth(options: OAuthOptions): InstagramOAuth {
   const doFetch = options.fetch ?? fetch;
 
@@ -70,7 +77,7 @@ export function createInstagramOAuth(options: OAuthOptions): InstagramOAuth {
         { access_token?: string; permissions?: unknown; data?: Array<{ access_token: string; permissions?: unknown }> }
       >(response);
       const entry = raw.data?.[0] ?? raw;
-      if (!entry.access_token) throw new Error('Resposta da Meta sem access_token');
+      if (!entry.access_token) throw new GraphApiError('Resposta da Meta sem access_token', response.status);
       return { accessToken: entry.access_token, permissions: toPermissions(entry.permissions) };
     },
 
@@ -79,20 +86,18 @@ export function createInstagramOAuth(options: OAuthOptions): InstagramOAuth {
       url.searchParams.set('grant_type', 'ig_exchange_token');
       url.searchParams.set('client_secret', options.appSecret);
       url.searchParams.set('access_token', shortToken);
-      const raw = await readGraphResponse<{ access_token: string; expires_in: number }>(
-        await doFetch(url, { signal: AbortSignal.timeout(15_000) }),
-      );
-      return { accessToken: raw.access_token, expiresInSec: raw.expires_in };
+      const response = await doFetch(url, { signal: AbortSignal.timeout(15_000) });
+      const raw = await readGraphResponse<{ access_token?: string; expires_in: number }>(response);
+      return toLongLived(raw, response.status);
     },
 
     async refresh(longToken) {
       const url = new URL('https://graph.instagram.com/refresh_access_token');
       url.searchParams.set('grant_type', 'ig_refresh_token');
       url.searchParams.set('access_token', longToken);
-      const raw = await readGraphResponse<{ access_token: string; expires_in: number }>(
-        await doFetch(url, { signal: AbortSignal.timeout(15_000) }),
-      );
-      return { accessToken: raw.access_token, expiresInSec: raw.expires_in };
+      const response = await doFetch(url, { signal: AbortSignal.timeout(15_000) });
+      const raw = await readGraphResponse<{ access_token?: string; expires_in: number }>(response);
+      return toLongLived(raw, response.status);
     },
   };
 }
