@@ -1,13 +1,25 @@
 # Guia rápido — Respostas automáticas
 
-Endereço: **https://dm.adriancampana.cloud** (dica: no celular, use "Adicionar à tela inicial" para ter o painel como um aplicativo).
+Endereço: **https://dm.adriancampana.cloud**
+
+Dica: coloque o painel na tela inicial do celular, para abrir como se fosse um aplicativo.
+
+- **iPhone (Safari)**: toque em **Compartilhar** (o quadrado com a seta para cima) › **Adicionar à Tela de Início**.
+- **Android (Chrome)**: toque no menu **⋮** (três pontinhos) › **Adicionar à tela inicial**.
+
+Neste guia, **DM** quer dizer a mensagem privada no Direct do Instagram.
 
 ## Entrar
 
 Digite seu **E-mail** e sua **Senha** e toque em **Entrar**. Se errar a senha 5 vezes seguidas, o painel pede para
-aguardar 15 minutos antes de tentar de novo. Para sair, toque em **Sair** (canto superior direito).
+aguardar 15 minutos antes de tentar de novo. Para sair, toque em **Sair** no canto superior direito (no celular aparece só o ícone de saída, uma seta saindo de uma porta).
 
 No rodapé do celular (ou no topo, no computador) ficam as três telas: **Automações**, **Atividade** e **Contas**.
+
+## Conectar uma conta do Instagram
+
+Em **Contas**, toque em **Conectar conta do Instagram** e entre com o usuário e a senha da conta que vai responder
+os comentários. Quando der certo, aparece "Conta @x conectada!".
 
 ## Criar uma automação
 
@@ -24,20 +36,24 @@ No rodapé do celular (ou no topo, no computador) ficam as três telas: **Automa
    (limite de 1000; emojis e acentos contam mais que letras simples).
 6. Toque em **Criar automação**. Pronto — ela já está ativa.
 
-Para mudar textos ou palavras-chave depois, toque em **Editar** no card da automação e depois em
+Para mudar textos ou palavras-chave depois, toque em **Editar** no cartão da automação e depois em
 **Salvar alterações**. O post não pode ser trocado: para usar outro post, crie uma nova automação.
 Se não quiser mais a automação, use **Excluir automação** (na tela de edição).
 
 ## No dia a dia
 
-- **Pausar/ativar**: use a chavinha no card da automação. Ela mostra **Ativa** ou **Pausada**.
-- **Atividade**: mostra cada comentário que tinha a palavra-chave e o que foi enviado para a pessoa, em duas linhas:
-  **Comentário** (a resposta pública) e **Direct** (a mensagem privada). Cada uma pode estar **Enviada**, **Na fila**,
-  **Enviando**, **Falhou** ou **Cancelada**. Se algo falhar, o motivo aparece em português logo abaixo.
-  Use os filtros no topo (**Todas as contas** e **Tudo / Enviadas / Na fila / Parciais / Falhas / Ignoradas**) e
-  os botões **Mais recentes** / **Mais antigas** para navegar.
+- **Pausar/ativar**: use a chavinha no cartão da automação. Ela mostra **Ativa** ou **Pausada**.
+- **Atividade**: mostra cada comentário que tinha a palavra-chave e o que foi enviado para a pessoa.
+  - Cada comentário tem duas linhas: **Comentário** (a resposta pública) e **Direct** (a DM, a mensagem privada).
+  - Cada linha pode estar **Enviada**, **Na fila** (esperando a hora de sair), **Enviando**, **Falhou** ou **Cancelada**.
+    Quando falha ou é cancelada, o motivo aparece escrito logo abaixo.
+  - No topo, os filtros: **Todas as contas** (ou escolha uma conta) e a situação:
+    **Tudo**, **Enviadas**, **Na fila**, **Parciais** (só uma das duas mensagens saiu, por exemplo a resposta
+    foi mas a DM falhou), **Falhas** e **Ignoradas** (o comentário não precisava de resposta; o motivo aparece, por
+    exemplo "Esta pessoa já recebeu resposta neste post").
+  - Use **Mais recentes** / **Mais antigas**, no fim da lista, para navegar.
 - Cada pessoa recebe **uma** resposta e **uma** DM por post, mesmo se comentar várias vezes (isso protege a conta).
-  Nesse caso a Atividade mostra "Esta pessoa já recebeu resposta neste post".
+  Nesse caso o comentário aparece em **Atividade** como ignorado.
 - As respostas saem entre 15 segundos e 2 minutos depois do comentário — é proposital, para parecer natural.
 
 ## Avisos que podem aparecer (em **Contas**)
@@ -49,7 +65,7 @@ Cada conta mostra uma situação: **Funcionando**, **Precisa reconectar**, **DMs
 |---|---|
 | **Precisa reconectar** | Em **Contas**, toque em **Reconectar** e entre com a conta do Instagram. Depois, volte em **Automações** e reative a chavinha das automações que estiverem **Pausadas**. |
 | **DMs bloqueadas** | No app do Instagram: Configurações › Mensagens e respostas a stories › Ferramentas conectadas › ative **Permitir acesso a mensagens**. |
-| **Pausada por segurança até …** | O Instagram pediu uma pausa. Não faça nada: volta sozinho em 24 h. Se repetir, fale com o Adrian. |
+| **Pausada por segurança até …** | O Instagram pediu uma pausa. Não faça nada: volta sozinho em 24 h. Se repetir, peça ajuda ao Adrian (quem instalou o sistema). |
 | **Desconectada** | A conta foi desconectada (por você ou no Instagram). Toque em **Reconectar** e reative as automações. |
 
 Outras coisas que vale saber:

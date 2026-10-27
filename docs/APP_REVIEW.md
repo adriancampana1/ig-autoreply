@@ -40,9 +40,10 @@ The UI is in Portuguese; the screencasts include English captions.
 ### instagram_business_basic
 
 ```
-Used to identify the Instagram professional account that the business owner connects (user ID, username, profile picture),
+Used to identify the Instagram professional account that the business owner connects (user ID and username),
 to list the account's own recent posts so the owner can choose which post an automation applies to, and to refresh the
-long-lived access token. This data is shown only to the account owner inside our private panel.
+long-lived access token. This data is shown only to the account owner inside our private panel (post thumbnails and
+captions are used to build the post picker; nothing is shown to third parties).
 ```
 
 ### instagram_business_manage_comments
@@ -58,7 +59,8 @@ third-party content, and each commenter receives at most one public reply per po
 ```
 Used exclusively to send one Private Reply (POST /<IG_ID>/messages with recipient.comment_id) to a person who commented a
 keyword on the owner's post, within the 7-day window, containing the information the commenter asked for (e.g. a link).
-We do not send unsolicited messages, follow-ups or bulk messages, and the message is identified as automated.
+We do not send unsolicited messages, follow-ups or bulk messages: each commenter can receive at most one private reply per post.
+The panel prompts the business owner to label the message as automated (a one-click "(mensagem automática)" footer button).
 ```
 
 ## Roteiro dos vídeos (1 por permissão, ~1–2 min cada, legendas em inglês)
@@ -76,6 +78,10 @@ cada botão ("Contas = Accounts", "Automações = Automations"...).
 ## Depois da aprovação
 
 - `REVIEW_MODE=false` e `docker compose up -d`.
-- Invalide o usuário do revisor com `docker compose exec ig-autoreply node dist/cli/users.js reset-password reviewer@adriancampana.cloud` (e descarte a nova senha).
+- Revogue o acesso do revisor em duas etapas (as sessões são cookies criptografados sem estado no servidor, então trocar a
+  senha **não** derruba uma sessão já aberta):
+  1. `docker compose exec ig-autoreply node dist/cli/users.js reset-password reviewer@adriancampana.cloud` (e descarte a nova senha);
+  2. gere um novo `SESSION_SECRET` (`openssl rand -base64 32`) no `.env` e rode `docker compose up -d`. Isso desconecta **todos** os usuários do painel
+     (sua esposa e você só precisam entrar de novo).
 - Desconecte a conta de teste do revisor, se ela tiver sido conectada (em **Contas › Desconectar**; isso pausa as
   automações dela e cancela respostas pendentes).
