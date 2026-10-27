@@ -2,7 +2,7 @@
 FROM node:24-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-# --ignore-scripts: os módulos nativos (better-sqlite3, argon2, sodium) já trazem binários pré-compilados,
+# --ignore-scripts: os módulos nativos (better-sqlite3, argon2) já trazem binários pré-compilados,
 # e não executar scripts de instalação reduz o risco de pacotes maliciosos.
 RUN npm ci --ignore-scripts
 COPY tsconfig.json tsconfig.build.json ./

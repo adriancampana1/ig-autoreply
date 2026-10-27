@@ -21,6 +21,11 @@ openssl rand -hex 24      # WEBHOOK_VERIFY_TOKEN
 mkdir -p data && sudo chown 1000:1000 data   # o container roda como usuário "node" (uid 1000)
 ```
 
+O `.env` precisa ter todas as variáveis obrigatórias preenchidas: `IG_APP_ID`, `IG_APP_SECRET`, `META_APP_SECRET`,
+`WEBHOOK_VERIFY_TOKEN`, `ENCRYPTION_KEY` e `SESSION_SECRET` (além de `APP_BASE_URL` e `CONTACT_EMAIL`, já preenchidas no
+exemplo). Cada uma tem um comentário em `.env.example` dizendo onde obter o valor. Se faltar algo, o app recusa subir e
+o motivo aparece em `docker compose logs`.
+
 > Guarde uma cópia do `ENCRYPTION_KEY` num gerenciador de senhas: sem ele, os tokens salvos não podem ser lidos
 > (seria preciso reconectar as contas).
 
@@ -31,6 +36,9 @@ docker compose up -d --build
 docker compose ps            # STATUS deve ficar "healthy" em ~30 s
 curl -s http://127.0.0.1:3010/healthz   # {"status":"ok"}
 ```
+
+Se o container não ficar `healthy` (ou ficar reiniciando), veja o motivo com `docker compose logs --tail 50 ig-autoreply`
+(normalmente uma variável do `.env` ausente ou inválida, ou `./data` sem permissão para o uid 1000).
 
 O container segue o mínimo necessário: roda como usuário `node` (não root), com sistema de arquivos raiz somente leitura
 (`read_only: true`; só `./data` e `/tmp` são graváveis), `no-new-privileges` e a porta publicada apenas em
@@ -46,6 +54,9 @@ sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d dm.adriancampana.cloud --redirect
 curl -sI https://dm.adriancampana.cloud/privacidade | head -1   # HTTP/2 200
 ```
+
+O login do painel só funciona depois do Certbot: em produção o cookie de sessão é `Secure` e o navegador não o envia por
+HTTP puro. Acesse sempre por `https://`.
 
 O bloco de proxy define `X-Forwarded-For` como `$remote_addr` (e **não** `$proxy_add_x_forwarded_for`). O app confia
 em exatamente um salto de proxy (`trustProxy` em `src/app.ts`) e usa a entrada mais à direita do `X-Forwarded-For`
@@ -76,17 +87,21 @@ sudo crontab -e
 
 O script usa o `.backup` do SQLite (cópia consistente com o app rodando e o banco em modo WAL), grava em
 `data/backups/app-AAAA-MM-DD.db` com permissão `600`, mantém 14 dias e só imprime a data e "backup ok" (nenhum
-segredo vai para o log). Teste uma vez à mão: `sudo APP_DIR=/opt/ig-autoreply deploy/backup.sh`.
+segredo vai para o log). Ele grava primeiro num arquivo temporário, confere com `pragma integrity_check` e só então
+renomeia para o nome com data; se `data/app.db` não existir ou a cópia estiver corrompida, sai com código 1 e uma mensagem
+em stderr. Teste uma vez à mão: `sudo APP_DIR=/opt/ig-autoreply deploy/backup.sh`.
 
 Recomendado: sincronizar `data/backups/` para fora da VPS (ex.: `rclone` para um storage). Lembre que o backup só é útil
 junto com o `ENCRYPTION_KEY` (seção 2).
 
 Para restaurar:
 
+Os backups pertencem ao root (modo 600) e `data/` ao uid 1000, então a restauração usa `sudo`. Troque `AAAA-MM-DD` pela data:
+
 ```bash
+cd /opt/ig-autoreply
 docker compose down
-rm -f data/app.db-wal data/app.db-shm
-cp data/backups/app-AAAA-MM-DD.db data/app.db && sudo chown 1000:1000 data/app.db
+sudo sh -c 'rm -f data/app.db-wal data/app.db-shm && cp data/backups/app-AAAA-MM-DD.db data/app.db && chown 1000:1000 data/app.db && chmod 600 data/app.db'
 docker compose up -d
 ```
 
@@ -94,6 +109,7 @@ docker compose up -d
 
 ```bash
 cd /opt/ig-autoreply && git pull && docker compose up -d --build
+docker image prune -f   # remove as imagens antigas que sobram a cada build
 ```
 
 As migrações do banco rodam automaticamente na inicialização.

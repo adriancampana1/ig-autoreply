@@ -15,7 +15,9 @@ services:
       - ./data:/app/data
     read_only: true
     tmpfs:
-      - /tmp
+      - /tmp:size=64m
+    cap_drop:
+      - ALL
     security_opt:
       - no-new-privileges:true
     logging:
