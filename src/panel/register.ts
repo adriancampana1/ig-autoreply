@@ -5,6 +5,7 @@ import { findUserById } from '../db/repos/users.js';
 import { ensureCsrfToken, takeFlash, verifyCsrf } from '../http/session.js';
 import { createThumbnailService } from '../media/thumbnails.js';
 import { registerAccountRoutes } from './routes/accounts.js';
+import { registerActivityRoutes } from './routes/activity.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerAutomationRoutes } from './routes/automations.js';
 import type { PanelContext } from './context.js';
@@ -55,5 +56,6 @@ export async function registerPanel(app: FastifyInstance, deps: AppDeps): Promis
     protectedScope.get('/', async (_request, reply) => reply.redirect('/automacoes'));
     await registerAccountRoutes(protectedScope, ctx);
     await registerAutomationRoutes(protectedScope, ctx);
+    await registerActivityRoutes(protectedScope, ctx);
   });
 }
