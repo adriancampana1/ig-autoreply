@@ -1,0 +1,42 @@
+{
+  "name": "ig-autoreply",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "tsx watch --env-file=.env src/server.ts",
+    "dev:css": "tailwindcss -i src/panel/styles.css -o public/assets/app.css --watch",
+    "build": "npm run build:css && npm run build:assets && tsc -p tsconfig.build.json",
+    "build:css": "tailwindcss -i src/panel/styles.css -o public/assets/app.css --minify",
+    "build:assets": "node scripts/copy-assets.mjs",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "user:create": "node dist/cli/users.js create",
+    "user:reset-password": "node dist/cli/users.js reset-password"
+  },
+  "dependencies": {
+    "@fastify/formbody": "^9.0.1",
+    "@fastify/helmet": "^13.2.0",
+    "@fastify/secure-session": "^8.4.1",
+    "@fastify/static": "^10.1.8",
+    "@node-rs/argon2": "^2.2.2",
+    "better-sqlite3": "^13.0.3",
+    "fastify": "^5.12.7",
+    "htmx.org": "^2.0.11",
+    "lucide-static": "^1.62.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^24.19.2",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
