@@ -20,7 +20,7 @@ export function enqueueJob(
   now: number,
 ): void {
   db.prepare(
-    "INSERT OR IGNORE INTO jobs (interaction_id, account_id, type, status, attempts, run_at, updated_at) VALUES (?, ?, ?, 'pending', 0, ?, ?)",
+    "INSERT INTO jobs (interaction_id, account_id, type, status, attempts, run_at, updated_at) VALUES (?, ?, ?, 'pending', 0, ?, ?) ON CONFLICT (interaction_id, type) DO NOTHING",
   ).run(job.interactionId, job.accountId, job.type, job.runAt, now);
 }
 
@@ -50,7 +50,12 @@ export function claimNextDueJob(db: DB, now: number): ClaimedJob | undefined {
 }
 
 export function completeJob(db: DB, id: number, resultId: string, now: number): void {
-  db.prepare("UPDATE jobs SET status = 'done', result_id = ?, updated_at = ? WHERE id = ?").run(resultId, now, id);
+  db.prepare("UPDATE jobs SET status = 'done', result_id = ?, last_attempt_at = ?, updated_at = ? WHERE id = ?").run(
+    resultId,
+    now,
+    now,
+    id,
+  );
 }
 
 export function failJob(
@@ -60,8 +65,8 @@ export function failJob(
   now: number,
 ): void {
   db.prepare(
-    "UPDATE jobs SET status = 'failed', attempts = attempts + 1, fail_reason = ?, last_error_code = ?, last_error_message = ?, updated_at = ? WHERE id = ?",
-  ).run(failure.reason, failure.code ?? null, failure.message ?? null, now, id);
+    "UPDATE jobs SET status = 'failed', attempts = attempts + 1, fail_reason = ?, last_error_code = ?, last_error_message = ?, last_attempt_at = ?, updated_at = ? WHERE id = ?",
+  ).run(failure.reason, failure.code ?? null, failure.message ?? null, now, now, id);
 }
 
 /** Devolve o job para a fila. `countAttempt=false` para esperas que não são falha (ritmo, limite, conta pausada). */
@@ -74,22 +79,32 @@ export function rescheduleJob(
 ): void {
   db.prepare(
     `UPDATE jobs SET status = 'pending', run_at = ?, attempts = attempts + ?, fail_reason = ?, last_error_code = ?,
-       last_error_message = ?, updated_at = ? WHERE id = ?`,
-  ).run(runAt, opts.countAttempt ? 1 : 0, opts.reason ?? null, opts.code ?? null, opts.message ?? null, now, id);
+       last_error_message = ?, last_attempt_at = COALESCE(?, last_attempt_at), updated_at = ? WHERE id = ?`,
+  ).run(
+    runAt,
+    opts.countAttempt ? 1 : 0,
+    opts.reason ?? null,
+    opts.code ?? null,
+    opts.message ?? null,
+    opts.countAttempt ? now : null,
+    now,
+    id,
+  );
 }
 
-/** Quantas ações (sucesso ou falha) a conta executou desde `since` — base do teto por hora. */
+/** Quantas tentativas (sucesso, falha ou retentativa) a conta executou desde `since` — base do teto por hora. */
 export function countActionsSince(db: DB, accountId: number, since: number): number {
   const row = db
-    .prepare("SELECT COUNT(*) AS n FROM jobs WHERE account_id = ? AND status IN ('done','failed') AND updated_at >= ?")
+    .prepare('SELECT COUNT(*) AS n FROM jobs WHERE account_id = ? AND last_attempt_at >= ?')
     .get(accountId, since) as { n: number };
   return row.n;
 }
 
+/** Momento da última tentativa da conta (base do espaçamento mínimo entre ações). */
 export function lastActionAt(db: DB, accountId: number): number | null {
-  const row = db
-    .prepare("SELECT MAX(updated_at) AS t FROM jobs WHERE account_id = ? AND status IN ('done','failed')")
-    .get(accountId) as { t: number | null };
+  const row = db.prepare('SELECT MAX(last_attempt_at) AS t FROM jobs WHERE account_id = ?').get(accountId) as {
+    t: number | null;
+  };
   return row.t;
 }
 

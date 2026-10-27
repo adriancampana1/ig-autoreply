@@ -20,9 +20,10 @@ export interface NewInteraction {
 export function insertInteraction(db: DB, input: NewInteraction, now: number): number | null {
   const result = db
     .prepare(
-      `INSERT OR IGNORE INTO interactions (automation_id, comment_id, commenter_igsid, commenter_username, comment_text,
+      `INSERT INTO interactions (automation_id, comment_id, commenter_igsid, commenter_username, comment_text,
          matched_keyword, source, status, skip_reason, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (comment_id) DO NOTHING`,
     )
     .run(
       input.automationId,
@@ -52,9 +53,15 @@ export function hasActedForPerson(db: DB, automationId: number, commenterIgsid: 
   );
 }
 
-/** Recalcula o status agregado a partir dos jobs: done, partial, failed ou queued. */
+/**
+ * Recalcula o status agregado a partir dos jobs: done, partial, failed ou queued.
+ * Sem jobs (ex.: interação pulada), mantém o status atual.
+ */
 export function refreshInteractionStatus(db: DB, interactionId: number): InteractionStatus {
   const jobs = db.prepare('SELECT status FROM jobs WHERE interaction_id = ?').all(interactionId) as Array<{ status: string }>;
+  if (jobs.length === 0) {
+    return (db.prepare('SELECT status FROM interactions WHERE id = ?').get(interactionId) as { status: InteractionStatus }).status;
+  }
   const statuses = jobs.map((job) => job.status);
   let status: InteractionStatus;
   if (statuses.some((s) => s === 'pending' || s === 'running')) status = 'queued';

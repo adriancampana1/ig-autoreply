@@ -12,8 +12,24 @@ import {
   getAutomation,
   listAutomationSummaries,
 } from '../src/db/repos/automations.js';
-import { hasActedForPerson, insertInteraction, listActivity, refreshInteractionStatus } from '../src/db/repos/interactions.js';
-import { cancelJobsOlderThan, claimNextDueJob, completeJob, enqueueJob, failJob } from '../src/db/repos/jobs.js';
+import {
+  hasActedForPerson,
+  insertInteraction,
+  listActivity,
+  purgeInteractionsBefore,
+  refreshInteractionStatus,
+} from '../src/db/repos/interactions.js';
+import {
+  cancelJobsOlderThan,
+  claimNextDueJob,
+  completeJob,
+  countActionsSince,
+  enqueueJob,
+  failJob,
+  lastActionAt,
+  rescheduleJob,
+  resetRunningJobs,
+} from '../src/db/repos/jobs.js';
 import { makeDb, seedAccount, seedAutomation, T0 } from './helpers/db.js';
 
 const interaction = (automationId: number, commentId: string, person = 'U1') => ({
@@ -127,5 +143,101 @@ describe('interactions + jobs repos', () => {
     enqueueJob(db, { interactionId: iid, accountId: acc.id, type: 'private_reply', runAt: T0 }, T0);
     expect(cancelJobsOlderThan(db, T0 + 1, T0 + 2)).toEqual([iid]);
     expect(refreshInteractionStatus(db, iid)).toBe('failed');
+  });
+});
+
+describe('rate-limit primitives', () => {
+  it('conta tentativas (sucesso, falha e retentativa), mas não esperas de ritmo', () => {
+    const db = makeDb();
+    const acc = seedAccount(db);
+    const auto = seedAutomation(db, acc.id);
+    const jobIdOf = (iid: number) => (db.prepare('SELECT id FROM jobs WHERE interaction_id = ?').get(iid) as { id: number }).id;
+    const iids = ['C1', 'C2', 'C3', 'C4'].map((c) => {
+      const iid = insertInteraction(db, interaction(auto.id, c), T0)!;
+      enqueueJob(db, { interactionId: iid, accountId: acc.id, type: 'public_reply', runAt: T0 }, T0);
+      return iid;
+    });
+    const [i1, i2, i3, i4] = iids as [number, number, number, number];
+    expect(lastActionAt(db, acc.id)).toBeNull();
+    completeJob(db, jobIdOf(i1), 'R1', T0 + 1);
+    failJob(db, jobIdOf(i2), { reason: 'boom' }, T0 + 2);
+    rescheduleJob(db, jobIdOf(i3), T0 + 100, T0 + 3, { countAttempt: true, reason: 'timeout' });
+    rescheduleJob(db, jobIdOf(i4), T0 + 200, T0 + 4, { countAttempt: false });
+    expect(lastActionAt(db, acc.id)).toBe(T0 + 3);
+    expect(countActionsSince(db, acc.id, T0)).toBe(3);
+    expect(countActionsSince(db, acc.id, T0 + 2)).toBe(2);
+    expect(countActionsSince(db, acc.id, T0 + 4)).toBe(0);
+  });
+
+  it('resetRunningJobs devolve jobs em execução para a fila', () => {
+    const db = makeDb();
+    const acc = seedAccount(db);
+    const auto = seedAutomation(db, acc.id);
+    const iid = insertInteraction(db, interaction(auto.id, 'C1'), T0)!;
+    enqueueJob(db, { interactionId: iid, accountId: acc.id, type: 'public_reply', runAt: T0 }, T0);
+    expect(claimNextDueJob(db, T0)).toBeDefined();
+    expect(resetRunningJobs(db, T0 + 1)).toBe(1);
+    expect(claimNextDueJob(db, T0 + 2)).toMatchObject({ commentId: 'C1' });
+  });
+
+  it('purgeInteractionsBefore remove os jobs em cascata', () => {
+    const db = makeDb();
+    const acc = seedAccount(db);
+    const auto = seedAutomation(db, acc.id);
+    const iid = insertInteraction(db, interaction(auto.id, 'C1'), T0)!;
+    enqueueJob(db, { interactionId: iid, accountId: acc.id, type: 'public_reply', runAt: T0 }, T0);
+    expect(purgeInteractionsBefore(db, T0 + 1)).toBe(1);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM jobs').get()).toEqual({ n: 0 });
+  });
+});
+
+describe('claimNextDueJob e contas', () => {
+  it('pula conta pausada por segurança até a pausa vencer', () => {
+    const db = makeDb();
+    const acc = seedAccount(db);
+    const auto = seedAutomation(db, acc.id);
+    const iid = insertInteraction(db, interaction(auto.id, 'C1'), T0)!;
+    enqueueJob(db, { interactionId: iid, accountId: acc.id, type: 'public_reply', runAt: T0 }, T0);
+    setAccountStatus(db, acc.id, 'paused_by_safety', T0, { pausedUntil: T0 + 1000 });
+    expect(claimNextDueJob(db, T0 + 999)).toBeUndefined();
+    expect(claimNextDueJob(db, T0 + 1000)).toMatchObject({ commentId: 'C1' });
+  });
+
+  it('pula conta sem token', () => {
+    const db = makeDb();
+    const acc = seedAccount(db);
+    const auto = seedAutomation(db, acc.id);
+    const iid = insertInteraction(db, interaction(auto.id, 'C1'), T0)!;
+    enqueueJob(db, { interactionId: iid, accountId: acc.id, type: 'public_reply', runAt: T0 }, T0);
+    db.prepare('UPDATE ig_accounts SET token_enc = NULL WHERE id = ?').run(acc.id);
+    expect(claimNextDueJob(db, T0 + 100)).toBeUndefined();
+  });
+});
+
+describe('desconexão, reconexão e status', () => {
+  it('desconectar cancela jobs pendentes; reconectar não os reativa', () => {
+    const db = makeDb();
+    const acc = seedAccount(db);
+    const auto = seedAutomation(db, acc.id);
+    const iid = insertInteraction(db, interaction(auto.id, 'C1'), T0)!;
+    enqueueJob(db, { interactionId: iid, accountId: acc.id, type: 'public_reply', runAt: T0 }, T0);
+    disconnectAccount(db, acc.id, T0);
+    expect(db.prepare('SELECT status, fail_reason AS reason FROM jobs').get()).toEqual({ status: 'cancelled', reason: 'account_disconnected' });
+    expect(db.prepare('SELECT status FROM interactions WHERE id = ?').get(iid)).toEqual({ status: 'failed' });
+    upsertConnectedAccount(db, { igId: 'IG1', appUserId: 'APP', username: 'loja', tokenEnc: 'x', tokenExpiresAt: T0 + 1 }, T0 + 5);
+    expect(claimNextDueJob(db, T0 + 100)).toBeUndefined();
+  });
+
+  it('interação sem jobs (pulada) mantém o status', () => {
+    const db = makeDb();
+    const acc = seedAccount(db);
+    const auto = seedAutomation(db, acc.id);
+    const iid = insertInteraction(
+      db,
+      { ...interaction(auto.id, 'C1'), status: 'skipped', skipReason: 'already_replied_to_person' },
+      T0,
+    )!;
+    expect(refreshInteractionStatus(db, iid)).toBe('skipped');
+    expect(db.prepare('SELECT status FROM interactions WHERE id = ?').get(iid)).toEqual({ status: 'skipped' });
   });
 });

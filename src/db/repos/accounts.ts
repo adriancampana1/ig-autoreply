@@ -1,4 +1,5 @@
 import type { DB } from '../database.js';
+import { refreshInteractionStatus } from './interactions.js';
 
 export type AccountStatus = 'ok' | 'reconnect_required' | 'paused_by_safety' | 'disconnected';
 
@@ -124,13 +125,23 @@ export function setMessagingDisabled(db: DB, id: number, disabled: boolean, now:
   db.prepare('UPDATE ig_accounts SET messaging_disabled = ?, updated_at = ? WHERE id = ?').run(disabled ? 1 : 0, now, id);
 }
 
-/** Apaga o token e pausa as automações (usado no botão "Desconectar" e no callback de desautorização). */
+/**
+ * Apaga o token, pausa as automações e cancela os jobs pendentes (usado no botão "Desconectar" e no
+ * callback de desautorização). Reconectar não reativa esses jobs.
+ */
 export function disconnectAccount(db: DB, id: number, now: number): void {
   db.transaction(() => {
     db.prepare(
       "UPDATE ig_accounts SET token_enc = NULL, token_expires_at = NULL, status = 'disconnected', updated_at = ? WHERE id = ?",
     ).run(now, id);
     db.prepare('UPDATE automations SET is_active = 0, updated_at = ? WHERE account_id = ?').run(now, id);
+    const affected = db
+      .prepare("SELECT DISTINCT interaction_id AS interactionId FROM jobs WHERE account_id = ? AND status = 'pending'")
+      .all(id) as Array<{ interactionId: number }>;
+    db.prepare(
+      "UPDATE jobs SET status = 'cancelled', fail_reason = 'account_disconnected', updated_at = ? WHERE account_id = ? AND status = 'pending'",
+    ).run(now, id);
+    for (const { interactionId } of affected) refreshInteractionStatus(db, interactionId);
   })();
 }
 

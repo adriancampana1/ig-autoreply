@@ -80,11 +80,13 @@ export const migrations: readonly string[] = [
     last_error_code TEXT,
     last_error_message TEXT,
     result_id TEXT,
+    last_attempt_at INTEGER,
     updated_at INTEGER NOT NULL,
     UNIQUE (interaction_id, type)
   );
   CREATE INDEX idx_jobs_due ON jobs(status, run_at);
   CREATE INDEX idx_jobs_account ON jobs(account_id, status, updated_at);
+  CREATE INDEX idx_jobs_account_attempt ON jobs(account_id, last_attempt_at);
 
   CREATE TABLE deletion_requests (
     code TEXT PRIMARY KEY,
