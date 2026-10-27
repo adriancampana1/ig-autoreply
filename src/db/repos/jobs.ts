@@ -69,13 +69,17 @@ export function failJob(
   ).run(failure.reason, failure.code ?? null, failure.message ?? null, now, now, id);
 }
 
-/** Devolve o job para a fila. `countAttempt=false` para esperas que não são falha (ritmo, limite, conta pausada). */
+/**
+ * Devolve o job para a fila. `countAttempt=false` para esperas que não são falha (ritmo, limite, conta pausada).
+ * `recordAttempt` (padrão = `countAttempt`) registra `last_attempt_at` sem incrementar `attempts`: use quando
+ * houve chamada real à API (ex.: rate limit, token inválido), para o espaçamento enxergá-la.
+ */
 export function rescheduleJob(
   db: DB,
   id: number,
   runAt: number,
   now: number,
-  opts: { countAttempt: boolean; reason?: string; code?: string; message?: string },
+  opts: { countAttempt: boolean; recordAttempt?: boolean; reason?: string; code?: string; message?: string },
 ): void {
   db.prepare(
     `UPDATE jobs SET status = 'pending', run_at = ?, attempts = attempts + ?, fail_reason = ?, last_error_code = ?,
@@ -86,10 +90,15 @@ export function rescheduleJob(
     opts.reason ?? null,
     opts.code ?? null,
     opts.message ?? null,
-    opts.countAttempt ? now : null,
+    (opts.recordAttempt ?? opts.countAttempt) ? now : null,
     now,
     id,
   );
+}
+
+/** Cancela um job (ex.: conta desconectada) registrando o motivo. */
+export function cancelJob(db: DB, id: number, reason: string, now: number): void {
+  db.prepare("UPDATE jobs SET status = 'cancelled', fail_reason = ?, updated_at = ? WHERE id = ?").run(reason, now, id);
 }
 
 /** Quantas tentativas (sucesso, falha ou retentativa) a conta executou desde `since` — base do teto por hora. */

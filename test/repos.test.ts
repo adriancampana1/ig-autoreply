@@ -21,6 +21,7 @@ import {
 } from '../src/db/repos/interactions.js';
 import {
   cancelJobsOlderThan,
+  cancelJob,
   claimNextDueJob,
   completeJob,
   countActionsSince,
@@ -167,6 +168,31 @@ describe('rate-limit primitives', () => {
     expect(countActionsSince(db, acc.id, T0)).toBe(3);
     expect(countActionsSince(db, acc.id, T0 + 2)).toBe(2);
     expect(countActionsSince(db, acc.id, T0 + 4)).toBe(0);
+  });
+
+  it('recordAttempt registra a tentativa para o ritmo sem incrementar attempts', () => {
+    const db = makeDb();
+    const acc = seedAccount(db);
+    const auto = seedAutomation(db, acc.id);
+    const iid = insertInteraction(db, interaction(auto.id, 'C1'), T0)!;
+    enqueueJob(db, { interactionId: iid, accountId: acc.id, type: 'public_reply', runAt: T0 }, T0);
+    const id = (db.prepare('SELECT id FROM jobs').get() as { id: number }).id;
+    rescheduleJob(db, id, T0 + 100, T0 + 5, { countAttempt: false, recordAttempt: true, reason: 'rate_limited' });
+    expect(lastActionAt(db, acc.id)).toBe(T0 + 5);
+    expect(db.prepare('SELECT attempts FROM jobs WHERE id = ?').get(id)).toEqual({ attempts: 0 });
+  });
+
+  it('cancelJob marca o job como cancelado com o motivo', () => {
+    const db = makeDb();
+    const acc = seedAccount(db);
+    const auto = seedAutomation(db, acc.id);
+    const iid = insertInteraction(db, interaction(auto.id, 'C1'), T0)!;
+    enqueueJob(db, { interactionId: iid, accountId: acc.id, type: 'public_reply', runAt: T0 }, T0);
+    const id = (db.prepare('SELECT id FROM jobs').get() as { id: number }).id;
+    cancelJob(db, id, 'account_disconnected', T0 + 1);
+    expect(db.prepare('SELECT status, fail_reason AS reason, updated_at AS at FROM jobs WHERE id = ?').get(id)).toEqual({
+      status: 'cancelled', reason: 'account_disconnected', at: T0 + 1,
+    });
   });
 
   it('resetRunningJobs devolve jobs em execução para a fila', () => {
