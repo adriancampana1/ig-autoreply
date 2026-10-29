@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Backup diário do SQLite (cópia consistente com o app rodando). Mantém 14 dias.
-# crontab -e  →  15 3 * * * /opt/ig-autoreply/deploy/backup.sh >> /var/log/ig-autoreply-backup.log 2>&1
+# Na VPS fica em /usr/local/sbin/backup-ig-autoreply; crontab root (docs/DEPLOY.md §7):
+#   15 3 * * * /usr/local/sbin/backup-ig-autoreply >> /var/log/ig-autoreply-backup.log 2>&1
 set -euo pipefail
 umask 077 # o banco contém hashes de senha e tokens cifrados: só o dono lê
-APP_DIR="${APP_DIR:-/opt/ig-autoreply}"
+APP_DIR="${APP_DIR:-/opt/services/ig-autoreply}"
 DB="$APP_DIR/data/app.db"
 DEST="$APP_DIR/data/backups"
 if [ ! -f "$DB" ]; then

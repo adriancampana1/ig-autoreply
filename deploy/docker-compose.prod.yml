@@ -1,0 +1,27 @@
+# Cópia versionada de /opt/services/ig-autoreply/docker-compose.yml na VPS.
+# Usa a imagem publicada pelo CI (.github/workflows/deploy.yml); o docker-compose.yml da raiz é o de build local.
+name: ig-autoreply
+
+services:
+  ig-autoreply:
+    image: ghcr.io/adriancampana1/ig-autoreply:latest
+    container_name: ig-autoreply
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_PATH: /app/data/app.db
+    ports:
+      - "127.0.0.1:3010:3000" # só o Nginx do host alcança o app
+    volumes:
+      - ./data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: local
