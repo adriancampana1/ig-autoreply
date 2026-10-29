@@ -1,2 +1,11 @@
-.superpowers/
 node_modules/
+dist/
+data/
+data-demo/
+screenshots/
+public/assets/app.css
+public/assets/htmx.min.js
+.env
+.env.*
+!.env.example
+.superpowers/

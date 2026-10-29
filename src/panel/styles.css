@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+/* Varre os templates TypeScript em busca das classes usadas. */
+@source "../";
+/* E as classes que o app.js aplica (chips de palavras-chave, contador). */
+@source "../../public/assets/app.js";
+
+/*
+ * Geist (SIL OFL 1.1, ver public/assets/fonts/OFL.txt), servida pelo próprio app: a CSP não permite fontes externas.
+ * Só o subconjunto latino (cobre o português); emojis e outros alfabetos caem na fonte do sistema.
+ */
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/assets/fonts/geist-latin.woff2") format("woff2-variations"), url("/assets/fonts/geist-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC,
+    U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/*
+ * Tokens no estilo shadcn/ui: neutros levemente tingidos pela cor de destaque (ameixa, matiz 315) + 1 destaque.
+ * Os NOMES dos tokens são o contrato usado nos componentes. Contraste verificado (AA) nos dois temas:
+ * texto ≥ 4.5:1 sobre card/fundo e sobre os fundos tingidos dos badges; --color-control e --color-ring ≥ 3:1.
+ */
+@theme {
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+
+  --color-background: oklch(0.985 0.003 315);
+  --color-foreground: oklch(0.2 0.015 315);
+  --color-card: oklch(0.998 0.0015 315);
+  --color-card-foreground: oklch(0.2 0.015 315);
+  --color-primary: oklch(0.5 0.19 315);
+  --color-primary-foreground: oklch(0.99 0.005 315);
+  --color-secondary: oklch(0.955 0.006 315);
+  --color-secondary-foreground: oklch(0.24 0.015 315);
+  --color-muted-foreground: oklch(0.5 0.015 315);
+  --color-accent: oklch(0.955 0.006 315);
+  --color-accent-foreground: oklch(0.24 0.015 315);
+  --color-destructive: oklch(0.51 0.2 25);
+  --color-destructive-foreground: oklch(0.99 0.005 25);
+  --color-success: oklch(0.47 0.12 150);
+  --color-warning: oklch(0.49 0.12 60);
+  --color-border: oklch(0.91 0.006 315);
+  /* Borda dos campos (input/select/textarea): ≥ 3:1 contra card e fundo (WCAG 1.4.11). */
+  --color-input: oklch(0.62 0.012 315);
+  /* Bordas sutis de botões outline e estados vazios (não identificam campo). */
+  --color-outline: oklch(0.82 0.01 315);
+  --color-ring: oklch(0.5 0.19 315);
+  /* Trilho do interruptor desligado: precisa de 3:1 contra o card (WCAG 1.4.11). */
+  --color-control: oklch(0.64 0.015 315);
+  /* Botão do interruptor: claro nos dois temas. */
+  --color-thumb: oklch(0.99 0.003 315);
+
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background: oklch(0.165 0.008 315);
+    --color-foreground: oklch(0.96 0.004 315);
+    --color-card: oklch(0.2 0.01 315);
+    --color-card-foreground: oklch(0.96 0.004 315);
+    --color-primary: oklch(0.76 0.13 315);
+    --color-primary-foreground: oklch(0.2 0.04 315);
+    --color-secondary: oklch(0.26 0.012 315);
+    --color-secondary-foreground: oklch(0.96 0.004 315);
+    --color-muted-foreground: oklch(0.72 0.012 315);
+    --color-accent: oklch(0.27 0.012 315);
+    --color-accent-foreground: oklch(0.96 0.004 315);
+    --color-destructive: oklch(0.7 0.17 22);
+    /* Texto escuro sobre o vermelho claro do tema escuro (branco ficaria abaixo de 4.5:1). */
+    --color-destructive-foreground: oklch(0.2 0.04 22);
+    --color-success: oklch(0.75 0.14 150);
+    --color-warning: oklch(0.8 0.13 75);
+    --color-border: oklch(0.29 0.012 315);
+    --color-input: oklch(0.56 0.012 315);
+    --color-outline: oklch(0.36 0.012 315);
+    --color-ring: oklch(0.76 0.13 315);
+    --color-control: oklch(0.53 0.015 315);
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  :focus-visible {
+    outline-color: var(--color-ring);
+  }
+  ::selection {
+    background-color: color-mix(in oklab, var(--color-primary) 22%, transparent);
+  }
+  /* Select no estilo dos inputs: seta própria (data: URI é permitida por img-src). */
+  select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23857c88' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1rem;
+    padding-right: 2.5rem;
+  }
+}
+
+@layer components {
+  /* Grade de posts enquanto o htmx busca outra conta (hx-indicator aponta para #post-picker). */
+  #post-picker.htmx-request {
+    opacity: 0.55;
+    pointer-events: none;
+    transition: opacity 150ms var(--ease-out-quart);
+  }
+  /* Interruptor aguardando o servidor (o estado já mudou de forma otimista em app.js). */
+  [role="switch"].htmx-request {
+    cursor: progress;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
