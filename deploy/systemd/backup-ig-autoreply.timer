@@ -1,0 +1,12 @@
+# Cópia versionada de /etc/systemd/system/backup-ig-autoreply.timer na VPS (docs/DEPLOY.md §7).
+# :45 para não coincidir com o backup-lumeri (:15).
+[Unit]
+Description=Backup ig-autoreply a cada 6h
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:45:00
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

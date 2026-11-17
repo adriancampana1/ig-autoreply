@@ -1,4 +1,4 @@
-# Cópia versionada de /opt/services/ig-autoreply/docker-compose.yml na VPS.
+# Cópia versionada de /opt/services/ig-autoreply/docker-compose.yml na VPS (docs/DEPLOY.md §2).
 # Usa a imagem publicada pelo CI (.github/workflows/deploy.yml); o docker-compose.yml da raiz é o de build local.
 name: ig-autoreply
 
@@ -6,6 +6,7 @@ services:
   ig-autoreply:
     image: ghcr.io/adriancampana1/ig-autoreply:latest
     container_name: ig-autoreply
+    init: true # repassa o SIGTERM do docker stop ao node (encerramento limpo em src/server.ts)
     restart: unless-stopped
     env_file: .env
     environment:

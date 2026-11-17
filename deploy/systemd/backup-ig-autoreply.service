@@ -1,0 +1,12 @@
+# Cópia versionada de /etc/systemd/system/backup-ig-autoreply.service na VPS (docs/DEPLOY.md §7).
+[Unit]
+Description=Backup ig-autoreply (SQLite cifrado -> Backblaze B2)
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/backup-ig-autoreply
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=30min
