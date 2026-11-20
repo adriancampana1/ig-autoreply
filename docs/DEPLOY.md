@@ -1,24 +1,45 @@
 # Deploy na VPS — dm.adriancampana.cloud
 
-Pré-requisitos na VPS: Docker + Docker Compose, Nginx no host, Certbot (`python3-certbot-nginx`) e `sqlite3`.
+Pré-requisitos na VPS: Docker + Docker Compose, Nginx no host, Certbot (`python3-certbot-nginx`), `sqlite3`, o usuário
+`deploy` (grupo `docker`) que o CI usa nos outros serviços e o backup cifrado já configurado em `/etc/backup` (o mesmo do
+backup da Lumeri: `age`, `rclone`, chave pública age e bucket B2 — seção 7).
+
+Fluxo (o mesmo dos outros serviços da VPS): push na `main` → GitHub Actions (`.github/workflows/deploy.yml`) roda typecheck
+e testes → publica a imagem em `ghcr.io/adriancampana1/ig-autoreply` → entra por SSH como `deploy` e faz `docker compose
+pull && up -d`. Na VPS ficam só `docker-compose.yml`, `.env` e `data/` em `/opt/services/ig-autoreply` — sem código-fonte.
+Os arquivos de infraestrutura da VPS têm cópia versionada em `deploy/`:
+
+| No repositório | Na VPS |
+|---|---|
+| `deploy/docker-compose.yml` | `/opt/services/ig-autoreply/docker-compose.yml` |
+| `deploy/nginx-vhost.conf` | `/etc/nginx/conf.d/ig-autoreply.conf` |
+| `deploy/backup.sh` | `/usr/local/sbin/backup-ig-autoreply` |
+| `deploy/systemd/backup-ig-autoreply.{service,timer}` | `/etc/systemd/system/` |
+
+O CI não atualiza nenhum deles: se um mudar, copie de novo para a VPS (seções 2, 4 e 7).
+
+O `.env` pertence ao `deploy` (modo `600`), então os comandos `docker compose` abaixo rodam em
+`/opt/services/ig-autoreply` como `sudo -u deploy docker compose ...`.
 
 ## 1. DNS
 
-No provedor do domínio, crie um registro `A` para `dm` apontando para o IP da VPS (e `AAAA` se a VPS tiver IPv6).
+No provedor do domínio, crie um registro `A` para `dm` apontando para o IP da VPS. Não crie `AAAA`: como os outros
+vhosts, o Nginx da VPS só escuta em IPv4.
 Confira com `dig +short dm.adriancampana.cloud`.
 
-## 2. Código e configuração
+## 2. Diretório e configuração na VPS
 
 ```bash
-sudo mkdir -p /opt/ig-autoreply && sudo chown $USER /opt/ig-autoreply
-git clone <URL-DO-REPOSITORIO> /opt/ig-autoreply
-cd /opt/ig-autoreply
-cp .env.example .env && chmod 600 .env
-# Preencha o .env. Gere os segredos:
+RAW=https://raw.githubusercontent.com/adriancampana1/ig-autoreply/main
+sudo install -d -o deploy -g deploy -m 755 /opt/services/ig-autoreply
+cd /opt/services/ig-autoreply
+sudo -u deploy curl -fsSLo docker-compose.yml $RAW/deploy/docker-compose.yml
+sudo -u deploy sh -c "umask 077 && curl -fsSLo .env $RAW/.env.example"
+# Preencha o .env (sudo -u deploy nano .env). Gere os segredos:
 openssl rand -base64 32   # ENCRYPTION_KEY
 openssl rand -base64 32   # SESSION_SECRET
 openssl rand -hex 24      # WEBHOOK_VERIFY_TOKEN
-mkdir -p data && sudo chown 1000:1000 data   # o container roda como usuário "node" (uid 1000)
+sudo install -d -o 1000 -g 1000 -m 700 data   # o container roda como usuário "node" (uid 1000)
 ```
 
 O `.env` precisa ter todas as variáveis obrigatórias preenchidas: `IG_APP_ID`, `IG_APP_SECRET`, `META_APP_SECRET`,
@@ -33,16 +54,27 @@ conta (a menos que `REVIEW_MODE=true`, usado só durante o App Review); nesse ca
 > Guarde uma cópia do `ENCRYPTION_KEY` num gerenciador de senhas: sem ele, os tokens salvos não podem ser lidos
 > (seria preciso reconectar as contas).
 
-## 3. Subir o container
+## 3. CI/CD e primeiro deploy
+
+No repositório, *Settings › Secrets and variables › Actions*, crie os mesmos secrets dos outros serviços:
+
+- `VPS_HOST`: IP da VPS.
+- `VPS_SSH_KEY`: chave privada do usuário `deploy` (a mesma dos outros repositórios).
+- `GHCR_PAT` (opcional): PAT clássico só com `read:packages`, para o `deploy` puxar a imagem se o pacote for privado.
+  Alternativa: depois do primeiro build, deixe o pacote público (*Packages › ig-autoreply › Package settings › Change
+  visibility*) — o repositório já é público e a imagem não contém segredos.
+
+Faça push (ou merge) na `main`, ou dispare à mão em *Actions › Build and Deploy › Run workflow*. Os jobs são
+`test` → `build-and-push` → `deploy`; o `deploy` só passa se o container ficar `healthy`. Confira na VPS:
 
 ```bash
-docker compose up -d --build
-docker compose ps            # STATUS deve ficar "healthy" em ~30 s
-curl -s http://127.0.0.1:3010/healthz   # {"status":"ok"}
+sudo -u deploy docker compose ps         # STATUS "healthy"
+curl -s http://127.0.0.1:3010/healthz    # {"status":"ok"}
 ```
 
-Se o container não ficar `healthy` (ou ficar reiniciando), veja o motivo com `docker compose logs --tail 50 ig-autoreply`
-(normalmente uma variável do `.env` ausente ou inválida, ou `./data` sem permissão para o uid 1000).
+Se o container não ficar `healthy` (ou ficar reiniciando), veja o motivo com
+`sudo -u deploy docker compose logs --tail 50 ig-autoreply` (normalmente uma variável do `.env` ausente ou inválida, ou
+`./data` sem permissão para o uid 1000).
 
 O container segue o mínimo necessário: roda como usuário `node` (não root), com sistema de arquivos raiz somente leitura
 (`read_only: true`; só `./data` e `/tmp` são graváveis), `no-new-privileges` e a porta publicada apenas em
@@ -52,8 +84,7 @@ hospedada em `public/assets/fonts/`, com a licença `OFL.txt`); nada é carregad
 ## 4. Nginx + HTTPS
 
 ```bash
-sudo cp deploy/nginx/dm.adriancampana.cloud.conf /etc/nginx/sites-available/
-sudo ln -s /etc/nginx/sites-available/dm.adriancampana.cloud.conf /etc/nginx/sites-enabled/
+sudo curl -fsSLo /etc/nginx/conf.d/ig-autoreply.conf https://raw.githubusercontent.com/adriancampana1/ig-autoreply/main/deploy/nginx-vhost.conf
 sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d dm.adriancampana.cloud --redirect
 curl -sI https://dm.adriancampana.cloud/privacidade | head -1   # HTTP/2 200
@@ -72,10 +103,10 @@ na frente do Nginx, revise essa configuração. Os assets (inclusive a fonte em 
 ## 5. Usuários do painel
 
 ```bash
-docker compose exec ig-autoreply node dist/cli/users.js create esposa@exemplo.com
-docker compose exec ig-autoreply node dist/cli/users.js create voce@exemplo.com
+sudo -u deploy docker compose exec ig-autoreply node dist/cli/users.js create esposa@exemplo.com
+sudo -u deploy docker compose exec ig-autoreply node dist/cli/users.js create voce@exemplo.com
 # esqueceu a senha?
-docker compose exec ig-autoreply node dist/cli/users.js reset-password esposa@exemplo.com
+sudo -u deploy docker compose exec ig-autoreply node dist/cli/users.js reset-password esposa@exemplo.com
 ```
 
 A senha é gerada e exibida **uma única vez**.
@@ -91,16 +122,17 @@ Faça isto depois do HTTPS (seção 4): a Meta só aceita URLs `https://` que re
    - Data deletion request URL: `https://dm.adriancampana.cloud/meta/data-deletion`
    - Copie **Instagram app ID** e **Instagram app secret** para `IG_APP_ID`/`IG_APP_SECRET` no `.env`; *App settings ›
      Basic › App secret* para `META_APP_SECRET`; em *Privacy Policy URL* use `https://dm.adriancampana.cloud/privacidade`.
-     Depois de editar o `.env`, rode `docker compose up -d --force-recreate` (o `restart` não relê o `.env`).
+     Depois de editar o `.env` (`sudo -u deploy nano .env`), rode `sudo -u deploy docker compose up -d --force-recreate`
+     (o `restart` não relê o `.env`).
 2. **Webhooks** (*Configure webhooks*): Callback URL `https://dm.adriancampana.cloud/webhooks/instagram` e Verify token =
    o valor de `WEBHOOK_VERIFY_TOKEN` › *Verify and save*. **Desassine todos os campos exceto `comments`** (o painel
    assina vários por padrão; o app só usa `comments`).
 3. **Descobrir qual segredo assina os webhooks**: com `META_WEBHOOK_SECRETS` vazio o app aceita os dois segredos
    (`META_APP_SECRET` e `IG_APP_SECRET`); deixe só o correto. Defina `META_WEBHOOK_SECRETS=<valor do META_APP_SECRET>`,
-   rode `docker compose up -d --force-recreate`, clique **Test** no campo `comments` e veja:
+   rode `sudo -u deploy docker compose up -d --force-recreate`, clique **Test** no campo `comments` e veja:
 
    ```bash
-   docker compose logs --since 5m ig-autoreply | grep -E "assinatura inválida|webhooks/instagram"
+   sudo -u deploy docker compose logs --since 5m ig-autoreply | grep -E "assinatura inválida|webhooks/instagram"
    ```
 
    Se aparecer "webhook com assinatura inválida descartado", troque para o valor do `IG_APP_SECRET` e repita. Fica
@@ -109,47 +141,64 @@ Faça isto depois do HTTPS (seção 4): a Meta só aceita URLs `https://` que re
 Depois disso, conecte as contas no painel (*Contas › Conectar conta do Instagram*, uma de cada vez) — só as que estão em
 `IG_ALLOWED_USERNAMES` (seção 2).
 
-## 7. Backup diário
+## 7. Backup (a cada 6h, cifrado, fora da VPS)
+
+Mesmo esquema do backup da Lumeri: um timer do systemd roda `/usr/local/sbin/backup-ig-autoreply`, que tira uma cópia
+consistente do SQLite (`.backup`, funciona com o app rodando e o banco em WAL), confere com `pragma integrity_check`,
+cifra com `age` usando a chave **pública** de `/etc/backup/age.pub` e envia ao Backblaze B2 em
+`<bucket>/ig-autoreply/AAAA/MM/`. Junto vai a configuração (`docker-compose.yml`, `.env` e o vhost), também cifrada. A
+VPS guarda 3 dias em `/var/backups/ig-autoreply`; a retenção no B2 é a do bucket. Com `/etc/backup/hc-url-ig-autoreply`
+(opcional, URL de ping do healthchecks.io), cada execução avisa início, sucesso ou falha.
+
+Pré-requisito: `/etc/backup` já configurado pelo setup do backup da Lumeri (`age.pub`, `rclone.conf`, `bucket`). Se a
+Application Key do B2 estiver restrita ao prefixo `lumeri/`, crie outra para o bucket inteiro ou o envio falha.
 
 ```bash
-chmod +x deploy/backup.sh
-sudo crontab -e
-# adicione:
-15 3 * * * APP_DIR=/opt/ig-autoreply /opt/ig-autoreply/deploy/backup.sh >> /var/log/ig-autoreply-backup.log 2>&1
+RAW=https://raw.githubusercontent.com/adriancampana1/ig-autoreply/main
+sudo curl -fsSLo /usr/local/sbin/backup-ig-autoreply $RAW/deploy/backup.sh
+sudo chmod 700 /usr/local/sbin/backup-ig-autoreply
+sudo curl -fsSLo /etc/systemd/system/backup-ig-autoreply.service $RAW/deploy/systemd/backup-ig-autoreply.service
+sudo curl -fsSLo /etc/systemd/system/backup-ig-autoreply.timer $RAW/deploy/systemd/backup-ig-autoreply.timer
+sudo systemctl daemon-reload && sudo systemctl enable --now backup-ig-autoreply.timer
+sudo systemctl start backup-ig-autoreply.service && journalctl -u backup-ig-autoreply.service -n 5 -o cat
+# esperado: "ok <data> db=...B cfg=...B"
 ```
 
-O script usa o `.backup` do SQLite (cópia consistente com o app rodando e o banco em modo WAL), grava em
-`data/backups/app-AAAA-MM-DD.db` com permissão `600`, mantém 14 dias e só imprime a data e "backup ok" (nenhum
-segredo vai para o log). Ele grava primeiro num arquivo temporário, confere com `pragma integrity_check` e só então
-renomeia para o nome com data; se `data/app.db` não existir ou a cópia estiver corrompida, sai com código 1 e uma mensagem
-em stderr. Teste uma vez à mão: `sudo APP_DIR=/opt/ig-autoreply deploy/backup.sh`.
+O log só tem a data e os tamanhos (nenhum segredo). Se `data/app.db` não existir, a cópia estiver corrompida ou o envio
+falhar, o serviço termina com erro (`systemctl status backup-ig-autoreply.service`).
 
-Recomendado: sincronizar `data/backups/` para fora da VPS (ex.: `rclone` para um storage). Lembre que o backup só é útil
-junto com o `ENCRYPTION_KEY` (seção 2).
+O backup só é útil junto com a chave **privada** age (no gerenciador de senhas, nunca na VPS) e o `ENCRYPTION_KEY`
+(seção 2; ele também está no `.env` dentro do backup de configuração).
 
-Para restaurar:
-
-Os backups pertencem ao root (modo 600) e `data/` ao uid 1000, então a restauração usa `sudo`. Troque `AAAA-MM-DD` pela data:
+Para restaurar (troque `<TS>` pelo carimbo do arquivo, ex. `20261118T004512Z`). Os locais estão em
+`/var/backups/ig-autoreply`; os mais antigos, no B2 (`rclone --config /etc/backup/rclone.conf copy
+offsite:<bucket>/ig-autoreply/AAAA/MM/ig-autoreply-db-<TS>.db.age /root/`):
 
 ```bash
-cd /opt/ig-autoreply
-docker compose down
-sudo sh -c 'rm -f data/app.db-wal data/app.db-shm && cp data/backups/app-AAAA-MM-DD.db data/app.db && chown 1000:1000 data/app.db && chmod 600 data/app.db'
-docker compose up -d
+cd /opt/services/ig-autoreply
+sudo sh -c 'umask 077 && cat > /root/age.key'   # cole a chave privada age e tecle Ctrl-D
+sudo -u deploy docker compose down
+sudo sh -c 'age -d -i /root/age.key -o /root/app.db /var/backups/ig-autoreply/ig-autoreply-db-<TS>.db.age \
+  && rm -f data/app.db-wal data/app.db-shm \
+  && install -o 1000 -g 1000 -m 600 /root/app.db data/app.db \
+  && shred -u /root/app.db /root/age.key'
+sudo -u deploy docker compose up -d
 ```
 
 ## 8. Atualizar
 
-```bash
-cd /opt/ig-autoreply && git pull && docker compose up -d --build
-docker image prune -f   # remove as imagens antigas que sobram a cada build
-```
+Push na `main` implanta sozinho (seção 3). As migrações do banco rodam automaticamente na inicialização.
 
-As migrações do banco rodam automaticamente na inicialização.
+Cada build também publica a tag `sha-<commit>`. Para voltar a uma versão, troque `:latest` por `:sha-<commit>` no
+`docker-compose.yml` da VPS e rode `sudo -u deploy docker compose up -d` (volte para `:latest` depois do conserto, senão o
+próximo deploy não muda nada).
+
+O `docker-compose.yml` da VPS é cópia de `deploy/docker-compose.yml` e não é atualizado pelo CI: se esse arquivo
+mudar, copie de novo (seção 2) e rode `sudo -u deploy docker compose up -d`.
 
 ## 9. Logs e diagnóstico
 
 ```bash
-docker compose logs -f --since 1h ig-autoreply
-docker compose exec ig-autoreply node -e "const D=require('better-sqlite3');const d=new D('/app/data/app.db',{readonly:true});console.log(d.prepare(\"select status,count(*) n from jobs group by status\").all())"
+sudo -u deploy docker compose logs -f --since 1h ig-autoreply
+sudo -u deploy docker compose exec ig-autoreply node -e "const D=require('better-sqlite3');const d=new D('/app/data/app.db',{readonly:true});console.log(d.prepare(\"select status,count(*) n from jobs group by status\").all())"
 ```
